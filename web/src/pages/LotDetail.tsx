@@ -43,9 +43,10 @@ export function LotDetailPage() {
         <Stamp score={lot.score} repaired={lot.repaired} />
       </header>
 
+      <Gallery images={gallery} alt={`${lot.maker} ${lot.model}`} />
+
       <div className="detail-grid">
         <div>
-          <Gallery images={gallery} alt={`${lot.maker} ${lot.model}`} />
           <section className="prose">
             <h2>このロットの読み方</h2>
             <p>{lot.story}</p>
