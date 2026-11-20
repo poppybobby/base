@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>当日の最速ルート</title>
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-<script src="vendor/tesseract/tesseract.min.js"></script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=4">
+<script src="vendor/tesseract/tesseract.min.js?v=4"></script>
 <style>
   :root {
     --ink: #172028;
@@ -109,6 +110,7 @@
 <header>
   <div class="kicker">AMAZON FLEX · 毎日どの市でも</div>
   <h1>当日の最速ルート</h1>
+  <p class="muted" id="build">画面の版 4。江辻のステーションは配達先から外れます。</p>
   <p class="muted">出発と終了、渋滞エリア、配達リストの長尺画像。番地から全国の住所を引き、その日の条件で運転時間が短い順を作ります。</p>
 </header>
 <main>
@@ -171,8 +173,8 @@
 <div class="bar" id="bar">
   <button type="button" id="primary">画像を選んでルートを作る</button>
 </div>
-<script src="vendor/leaflet/leaflet.js"></script>
-<script src="planner.js"></script>
+<script src="vendor/leaflet/leaflet.js?v=4"></script>
+<script src="planner.js?v=4"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -275,7 +277,7 @@ function paintSlice(img, sy, sh, scale, mode) {
 
 function slicesOf(img, mode) {
   const scale = img.width > 1400 ? 1400 / img.width : 1.6;
-  const sliceH = Math.max(800, Math.floor(4096 / scale));
+  const sliceH = Math.max(700, Math.floor(1600 / scale));
   const step = Math.max(1, sliceH - Math.round(160 / scale));
   const out = [];
   for (let y = 0; y < img.height; y += step) {
@@ -312,6 +314,10 @@ async function recognize(canvas) {
   }
   const worker = await workerPromise;
   try {
+    if (!worker.__flexReady) {
+      await worker.setParameters({ tessedit_pageseg_mode: "6" });
+      worker.__flexReady = true;
+    }
     const result = await worker.recognize(canvas);
     return result.data.text || "";
   } catch (e) {
@@ -327,7 +333,11 @@ async function readMode(img, mode) {
   for (let i = 0; i < parts.length; i++) {
     sliceLabel = "文字を読んでいます " + (i + 1) + "/" + parts.length;
     setStatus(sliceLabel);
-    text += "\n" + await recognize(parts[i]);
+    try {
+      text += "\n" + await recognize(parts[i]);
+    } catch (e) {
+      text += "\n";
+    }
   }
   return text;
 }
@@ -566,9 +576,9 @@ async function ingestFiles(files) {
       text += "\n" + await readFile(file);
     }
     const parsed = FlexPlanner.parseFlexText(text);
+    $("paste").value = text.trim();
     if (!parsed.length) {
       const stationOnly = String(text).split(/\n/).some((line) => FlexPlanner.isFlexStation(line));
-      $("paste").value = text.trim();
       setStatus(stationOnly
         ? "ステーション（江辻）は配達先に入れていません。配達の住所が読み取れていないので、画像をもう一度選んでください。"
         : "画像から住所を分離できませんでした。下の欄に読み取り結果を出したので、住所の行だけ残してルートを作ってください。");
