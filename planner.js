@@ -188,8 +188,174 @@
   // 規制時間中は抜け道が一方通行になり、速度も落ちる。
   function driveMin(a, b, departMin, restriction) {
     const meters = haversine(a, b) * 1.4;
+    if (meters < 40) return 0;
     const kmh = inRestriction(departMin, restriction) ? 15 : 24;
     return Math.max(0.4, (meters / 1000 / kmh) * 60);
+  }
+
+  function normalizeAddress(address) {
+    return String(address || "")
+      .replace(/ヶケ/g, "ヶ")
+      .replace(/ケ丘/g, "ヶ丘")
+      .replace(/[ \t　]+/g, " ")
+      .trim();
+  }
+
+  function streetQuery(address) {
+    let s = normalizeAddress(address);
+    s = s.replace(/[CＣ]棟.*/g, "");
+    s = s.replace(/[CＣ]-?\d+.*/g, "");
+    s = s.replace(/\d+棟.*/g, "");
+    s = s.replace(/号室.*/g, "");
+    s = s.replace(/[ァ-ヴー]{2,}.*/g, "");
+    return s.replace(/\s+/g, "");
+  }
+
+  function parseFlexText(text) {
+    const lines = String(text || "")
+      .split(/\n/)
+      .map((line) => line.replace(/[|｜]/g, " ").replace(/[〇○●□]/g, " ").replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    const stops = [];
+    let cur = null;
+    let pendingId = null;
+    let pendingCurrent = false;
+
+    function push() {
+      if (cur && cur.address) stops.push(cur);
+      cur = null;
+    }
+
+    lines.forEach((line) => {
+      if (/次の目的地/.test(line)) {
+        const m = line.match(/(\d{1,3})/);
+        if (m) pendingId = Number(m[1]);
+        pendingCurrent = true;
+        return;
+      }
+      if (/^#/.test(line) || /G\.?\s*L/i.test(line) || /^[0-9]G$/.test(line) || line === "人") return;
+      const tm = line.match(/(\d{1,2}:\d{2})\s*[-–ー~〜]\s*(\d{1,2}:\d{2})/);
+      if (tm) {
+        push();
+        const idIn = line.match(/(?:^|\s)(\d{1,3})(?:\s|$)/);
+        cur = {
+          id: pendingId != null ? pendingId : (idIn ? Number(idIn[1]) : null),
+          windowStart: tm[1].padStart(5, "0"),
+          windowEnd: tm[2].padStart(5, "0"),
+          address: "",
+          current: pendingCurrent,
+        };
+        pendingId = null;
+        pendingCurrent = false;
+        return;
+      }
+      const onlyId = line.match(/^(\d{1,3})$/);
+      if (onlyId) {
+        pendingId = Number(onlyId[1]);
+        return;
+      }
+      if (!/[市区県町村郡丁目番\d]/.test(line)) return;
+      if (!cur) {
+        cur = { id: pendingId, windowStart: null, windowEnd: null, address: "" };
+        pendingId = null;
+      }
+      cur.address = normalizeAddress((cur.address + " " + line).trim());
+    });
+    push();
+
+    for (let i = 0; i < stops.length; i++) {
+      if (stops[i].id != null) continue;
+      const prev = i > 0 ? stops[i - 1].id : null;
+      const next = stops.slice(i + 1).find((s) => s.id != null);
+      if (prev != null && next && next.id === prev + 2) stops[i].id = prev + 1;
+    }
+    return stops.map((s) => Object.assign({}, s, {
+      address: normalizeAddress(s.address),
+      windowEndMin: clockToMin(s.windowEnd),
+      windowStartMin: clockToMin(s.windowStart),
+    }));
+  }
+
+  function bearing(a, b) {
+    const y = Math.sin(((b.lon - a.lon) * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180);
+    const x = Math.cos((a.lat * Math.PI) / 180) * Math.sin((b.lat * Math.PI) / 180)
+      - Math.sin((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.cos(((b.lon - a.lon) * Math.PI) / 180);
+    return Math.atan2(y, x);
+  }
+
+  function turnPenaltyMin(h1, h2) {
+    if (h1 == null || h2 == null) return 0;
+    let d = h2 - h1;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    const deg = (d * 180) / Math.PI;
+    if (deg > 40 && deg < 160) return 0.45;
+    if (Math.abs(deg) >= 160) return 0.7;
+    return 0;
+  }
+
+  function routeDriveCost(route, start, departMin, restriction, serviceMin, endMin) {
+    let cost = 0;
+    let prev = start && start.lat != null ? start : null;
+    let heading = null;
+    let t = departMin;
+    route.forEach((s) => {
+      if (prev) {
+        const drive = driveMin(prev, s, t, restriction);
+        const h = bearing(prev, s);
+        const pen = turnPenaltyMin(heading, h);
+        cost += drive + pen;
+        t += drive + serviceMin;
+        heading = h;
+        if (s.windowEndMin != null && t > s.windowEndMin) cost += (t - s.windowEndMin) * 3;
+        if (endMin != null && t > endMin) cost += (t - endMin) * 2;
+      }
+      prev = s;
+    });
+    return cost;
+  }
+
+  function fastestOrder(stops, start, departMin, restriction, serviceMin, endMin) {
+    if (stops.length <= 1) return stops.slice();
+    const left = stops.slice();
+    const route = [];
+    let prev = start && start.lat != null ? start : null;
+    let heading = null;
+    let t = departMin;
+    while (left.length) {
+      let bestI = 0;
+      let bestC = Infinity;
+      left.forEach((s, i) => {
+        const drive = prev ? driveMin(prev, s, t, restriction) : 0;
+        const h = prev ? bearing(prev, s) : null;
+        const c = drive + turnPenaltyMin(heading, h);
+        if (c < bestC) { bestC = c; bestI = i; }
+      });
+      const s = left.splice(bestI, 1)[0];
+      if (prev) {
+        const h = bearing(prev, s);
+        t += driveMin(prev, s, t, restriction) + serviceMin;
+        heading = h;
+      }
+      route.push(s);
+      prev = s;
+    }
+    let best = route;
+    let improved = true;
+    while (improved) {
+      improved = false;
+      for (let i = 0; i < best.length - 1; i++) {
+        for (let k = i + 1; k < best.length; k++) {
+          const next = best.slice(0, i).concat(best.slice(i, k + 1).reverse(), best.slice(k + 1));
+          if (routeDriveCost(next, start, departMin, restriction, serviceMin, endMin) + 0.05
+            < routeDriveCost(best, start, departMin, restriction, serviceMin, endMin)) {
+            best = next;
+            improved = true;
+          }
+        }
+      }
+    }
+    return best;
   }
 
   function planDay(stops, options) {
@@ -200,42 +366,57 @@
     const here = opts.here || null;
     const depart = opts.departMin == null ? 5 * 60 : opts.departMin;
 
+    const endMin = opts.endMin == null ? null : opts.endMin;
     const must = [];
-    const flex = [];
+    const congestion = [];
+    const later = [];
     stops.forEach((s) => {
       if (s.windowEndMin != null && s.windowEndMin <= restriction.endMin) must.push(s);
-      else flex.push(s);
+      else if (areas.some((a) => inArea(s, a))) congestion.push(s);
+      else later.push(s);
     });
 
-    const mustOrder = orderRoute(must, { areas: areas, here: here });
-    const flexOrder = orderRoute(flex, {
-      areas: areas,
-      here: mustOrder.length ? mustOrder[mustOrder.length - 1] : here,
+    const groups = [must, congestion, later];
+    const ordered = [];
+    let cursor = here;
+    let clock = depart;
+    groups.forEach((group) => {
+      if (!group.length) return;
+      const blockAllowsWait = endMin == null || endMin > restriction.endMin;
+      const canWait = blockAllowsWait && group.every((s) => s.windowEndMin == null || s.windowEndMin > restriction.endMin);
+      if (canWait && inRestriction(clock, restriction)) clock = restriction.endMin;
+      const part = fastestOrder(group, cursor, clock, restriction, serviceMin, endMin);
+      part.forEach((s) => {
+        ordered.push(s);
+        if (cursor && cursor.lat != null) clock += driveMin(cursor, s, clock, restriction);
+        clock += serviceMin;
+        cursor = s;
+      });
     });
 
     const timed = [];
     let t = depart;
     let prev = here;
-
-    function append(s) {
-      const drive = prev ? driveMin(prev, s, t, restriction) : 0;
-      const arrive = t + drive;
+    ordered.forEach((s) => {
+      const drive = prev && prev.lat != null ? driveMin(prev, s, t, restriction) : 0;
+      let arrive = t + drive;
+      const blockAllowsWait = endMin == null || endMin > restriction.endMin;
+      const canWait = blockAllowsWait && (s.windowEndMin == null || s.windowEndMin > restriction.endMin);
+      const prioritized = areas.some((a) => inArea(s, a));
+      if (canWait && !prioritized && inRestriction(arrive, restriction)) {
+        t = restriction.endMin;
+        arrive = t + (prev && prev.lat != null ? driveMin(prev, s, t, restriction) : 0);
+      }
+      const finish = arrive + serviceMin;
       timed.push(Object.assign({}, s, {
         arriveMin: arrive,
         driveMin: drive,
         inRestriction: inRestriction(arrive, restriction),
+        missesWindow: s.windowEndMin != null && finish > s.windowEndMin,
+        missesEnd: endMin != null && finish > endMin,
       }));
-      t = arrive + serviceMin;
+      t = finish;
       prev = s;
-    }
-
-    mustOrder.forEach(append);
-    flexOrder.forEach((s) => {
-      const drive = prev ? driveMin(prev, s, t, restriction) : 0;
-      const arrive = t + drive;
-      const canWait = s.windowEndMin == null || s.windowEndMin > restriction.endMin;
-      if (canWait && inRestriction(arrive, restriction)) t = restriction.endMin;
-      append(s);
     });
     return timed;
   }
@@ -273,5 +454,8 @@
     clockToMin,
     formatMin,
     planDay,
+    parseFlexText,
+    normalizeAddress,
+    streetQuery,
   };
 });

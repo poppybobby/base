@@ -62,6 +62,9 @@ assert.strictEqual(atEight[0].inRestriction, true);
 assert.ok(atEight[1].arriveMin >= 9 * 60, "9時まで待てる件は規制のあと");
 assert.strictEqual(atEight[1].inRestriction, false);
 
+const insideBlock = p.planDay([later], { departMin: 8 * 60, endMin: 8 * 60 + 30 });
+assert.ok(insideBlock[0].arriveMin < 9 * 60, "終了が9時前なら規制中でも回る");
+
 const beforeSeven = p.planDay([later], { departMin: 6 * 60 });
 assert.ok(beforeSeven[0].arriveMin < 7 * 60);
 assert.strictEqual(beforeSeven[0].inRestriction, false);
@@ -76,5 +79,33 @@ kasuga.forEach((s) => {
   assert.ok(s.arriveMin < 7 * 60, s.id + " は7時前");
   console.log(s.id, p.formatMin(s.arriveMin), "drive", s.driveMin.toFixed(1));
 });
+
+const sample = `| 9 | 次の目的地
+〇 スケジュール済み 04:00 - 07:59
+# G.LO1.0V                                     1G
+福岡県紅葉ヶ丘西 6-1-1 C-102 コモンシテ
+イィ紅葉ヶ丘西C棟 102
+ 〇 スケジュール済み 04:00 - 07:59
+# G.LO1.0V                                     1G
+春日市紅葉ケ丘西 2-78
+|11| 〇 スケジュール済み 04:00 - 07:59
+# G.LO1.0V                                     1G
+春日市一の谷 4丁目94-2
+| 12| 〇 スケジュール済み 04:00 - 07:59
+# G.LO1.0V                                     1G
+春日市天神山 4-117
+人`;
+const parsed = p.parseFlexText(sample);
+assert.deepStrictEqual(parsed.map((s) => s.id), [9, 10, 11, 12]);
+assert.ok(parsed[0].address.includes("6-1-1"));
+assert.ok(parsed[1].address.includes("2-78"));
+assert.strictEqual(parsed[1].address.includes("ヶ丘"), true);
+assert.ok(parsed[2].address.includes("94-2"));
+assert.ok(parsed[3].address.includes("4-117"));
+assert.strictEqual(parsed[0].windowEnd, "07:59");
+assert.strictEqual(parsed[0].current, true);
+assert.strictEqual(parsed[1].current, false);
+assert.ok(!p.streetQuery(parsed[0].address).includes("コモン"));
+parsed.forEach((s) => console.log("parsed", s.id, p.streetQuery(s.address)));
 
 console.log("planner tests ok");
