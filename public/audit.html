@@ -27,7 +27,7 @@
 <header>
   <p><a href="index.html">当日の最速ルートへ戻る</a></p>
   <h1>動作の監査</h1>
-  <p>配達アプリと同じ計画コードで、これまで本番で止まった条件を検査します。</p>
+  <p>同じ読み取りで、同梱のFlexリスト画像を最後まで通し、GoogleマップのナビURLができるまでを合格にします。</p>
   <div id="verdict" class="verdict wait">検査しています</div>
 </header>
 <main>
@@ -36,7 +36,9 @@
     <tbody id="rows"></tbody>
   </table>
 </main>
-<script src="planner.js?v=9"></script>
+<script src="vendor/tesseract/tesseract.min.js?v=10"></script>
+<script src="planner.js?v=10"></script>
+<script src="reader.js?v=10"></script>
 <script>
 const rows = document.getElementById("rows");
 const results = [];
@@ -49,7 +51,7 @@ function add(name, ok, detail) {
 }
 
 function runLocal(source) {
-  add("画面は版9", source.includes("画面の版 9") && source.includes("planner.js?v=9"), source.includes("画面の版 9") ? "版9の画面" : "版の表示が違う");
+  add("画面は版10", source.includes("画面の版 10") && source.includes("planner.js?v=10") && source.includes("reader.js?v=10"), source.includes("画面の版 10") ? "版10の画面" : "版の表示が違う");
   add("1件目と最後だけ外す", source.includes("withoutTerminalStops") && source.includes("市や区の番地") && !source.includes('indexOf("江辻")'), "市区の番地は残す");
 
   const day = FlexPlanner.parseFlexText("Logiport福岡南\nスケジュール済み 04:00 - 07:59\n福岡市博多区光丘町1丁目1\nスケジュール済み 04:00 - 07:59\n春日市天神山4-117\nスケジュール済み 04:00 - 07:59\n柏屋町江辻84C");
@@ -137,10 +139,40 @@ function finish() {
   box.textContent = failed.length ? "不合格 " + failed.length + "件。最初は「" + failed[0].name + "」" : "合格 " + results.length + "件";
 }
 
+async function runImage() {
+  const box = document.getElementById("verdict");
+  const reader = FlexReader.create({ setStatus: function (text) { box.textContent = text; } });
+  const response = await fetch("fixtures/flex-list.png", { cache: "no-store" });
+  if (!response.ok) throw new Error("リスト画像がありません");
+  const file = new File([await response.blob()], "flex-list.png", { type: "image/png" });
+  const text = await reader.readFile(file);
+  const parsed = FlexPlanner.withoutTerminalStops(FlexPlanner.parseFlexText(text));
+  add("画像から4件読む", parsed.length >= 4 && parsed.filter((s) => /天神山|紅葉|一の谷/.test(s.address)).length >= 3, parsed.map((s) => s.address).join(" | ") || "行なし");
+  const located = [];
+  for (let i = 0; i < parsed.length; i++) {
+    box.textContent = "画像の住所を確認しています " + (i + 1) + "/" + parsed.length;
+    const hit = await locate(parsed[i].address);
+    if (hit) located.push(Object.assign({}, parsed[i], hit));
+  }
+  add("画像の住所が位置を取る", located.length >= 4, located.length + "/" + parsed.length);
+  const ordered = FlexPlanner.planDay(located, { departMin: 5 * 60, endMin: 8 * 60, serviceMin: 1.3 });
+  const nav = FlexPlanner.mapsUrl(ordered, true);
+  const navOk = ordered.length >= 4 && nav.includes("dir_action=navigate") && !nav.includes("origin=") && !nav.includes("optimize");
+  add("画像からナビURLまで作る", navOk, nav.slice(0, 160) || "URLなし");
+  const link = document.createElement("p");
+  const a = document.createElement("a");
+  a.href = nav;
+  a.textContent = "この画像のGoogleマップナビ";
+  a.target = "_blank";
+  a.rel = "noopener";
+  link.appendChild(a);
+  document.querySelector("main").appendChild(link);
+}
+
 (async function () {
   let source = "";
   try {
-    source = await fetch("index.html?v=9", { cache: "no-store" }).then((r) => r.text());
+    source = await fetch("index.html?v=10", { cache: "no-store" }).then((r) => r.text());
   } catch (e) {
     source = "";
   }
@@ -153,6 +185,11 @@ function finish() {
     await runGeo();
   } catch (e) {
     add("住所検索への接続", false, e && e.message ? e.message : "接続できない");
+  }
+  try {
+    await runImage();
+  } catch (e) {
+    add("画像からナビまで", false, e && e.message ? e.message : "停止");
   }
   finish();
 })();
