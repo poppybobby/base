@@ -223,43 +223,61 @@ async function geocodeQuery(query) {
 }
 
 async function geocodeAddress(address) {
-  const base = FlexPlanner.streetQuery(address);
-  const stripped = base.replace(/^(北海道|東京都|大阪|京都|.{2,3}[都道府県])/, "");
-  const queries = stripped && stripped !== base ? [base, stripped] : [base];
+  const queries = FlexPlanner.geocodeCandidates(address);
+  let lastError = null;
   for (const q of queries) {
-    if (!q) continue;
-    const hit = await geocodeQuery(q);
-    if (hit) return hit;
+    try {
+      const hit = await geocodeQuery(q);
+      if (hit) return hit;
+    } catch (e) {
+      lastError = e;
+    }
   }
+  if (lastError) throw lastError;
   return null;
 }
 
-function preprocess(file) {
+function loadImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width * 2;
-      canvas.height = img.height * 2;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const d = image.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const y = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
-        const v = y < 165 ? 255 : 0;
-        d[i] = d[i + 1] = d[i + 2] = v;
-      }
-      ctx.putImageData(image, 0, 0);
-      resolve(canvas);
-    };
-    img.onerror = reject;
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("画像を開けませんでした"));
     img.src = URL.createObjectURL(file);
   });
 }
 
-async function readFile(file) {
-  const canvas = await preprocess(file);
+function canvasFrom(img, mode) {
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width * 2;
+  canvas.height = img.height * 2;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  if (mode === "binary") {
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = image.data;
+    let dark = 0;
+    for (let i = 0; i < d.length; i += 16) {
+      const y = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
+      if (y < 140) dark++;
+    }
+    const inverted = dark > (d.length / 16) * 0.45;
+    for (let i = 0; i < d.length; i += 4) {
+      let y = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
+      if (inverted) y = 255 - y;
+      const v = y < 150 ? 0 : 255;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+  return canvas;
+}
+
+async function recognize(canvas) {
+  if (typeof Tesseract === "undefined") {
+    throw new Error("文字認識の読み込みに失敗しました。通信を確認して、ページを開き直してください。");
+  }
   if (!workerPromise) {
     workerPromise = Tesseract.createWorker("jpn", 1, {
       langPath: "https://tessdata.projectnaptha.com/4.0.0_fast",
@@ -273,6 +291,16 @@ async function readFile(file) {
   const worker = await workerPromise;
   const result = await worker.recognize(canvas);
   return result.data.text || "";
+}
+
+async function readFile(file) {
+  const img = await loadImage(file);
+  const plain = await recognize(canvasFrom(img, "plain"));
+  const plainStops = FlexPlanner.parseFlexText(plain);
+  if (plainStops.length) return plain;
+  const binary = await recognize(canvasFrom(img, "binary"));
+  const binaryStops = FlexPlanner.parseFlexText(binary);
+  return binaryStops.length >= plainStops.length ? binary : plain;
 }
 
 function collectFromForm() {
@@ -289,7 +317,8 @@ function collectFromForm() {
       windowEnd: windowEnd || null,
       windowEndMin: FlexPlanner.clockToMin(windowEnd),
       lat, lon,
-      matched: tr.dataset.matched || ""
+      matched: tr.dataset.matched || "",
+      current: tr.dataset.current === "1"
     };
   }).filter((s) => s.address);
 }
@@ -304,6 +333,7 @@ function drawRows() {
     tr.dataset.lon = s.lon != null ? s.lon : "";
     tr.dataset.matched = s.matched || "";
     tr.dataset.start = s.windowStart || "";
+    tr.dataset.current = s.current ? "1" : "";
     tr.innerHTML =
       '<td><input class="sid" inputmode="numeric" value="' + (s.id == null ? "" : s.id) + '"></td>' +
       '<td><input class="saddr" value="' + escapeAttr(s.address) + '"><div class="matched">' +
@@ -324,16 +354,30 @@ function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
 
 async function locateAll() {
   stops = collectFromForm();
+  if (!stops.length) return;
+  let networkError = "";
   for (let i = 0; i < stops.length; i++) {
     setStatus("住所を確認しています " + (i + 1) + "/" + stops.length);
-    const hit = await geocodeAddress(stops[i].address);
-    if (hit) Object.assign(stops[i], hit);
-    else { stops[i].lat = null; stops[i].lon = null; stops[i].matched = ""; }
+    try {
+      const hit = await geocodeAddress(stops[i].address);
+      if (hit) Object.assign(stops[i], hit);
+      else { stops[i].lat = null; stops[i].lon = null; stops[i].matched = ""; }
+    } catch (e) {
+      stops[i].lat = null;
+      stops[i].lon = null;
+      stops[i].matched = "";
+      networkError = e && e.message ? e.message : "住所検索に接続できません";
+    }
   }
   drawRows();
-  setStatus(stops.filter((s) => s.lat == null).length
-    ? "見つからない住所があります。番地を直して、もう一度ルートを作ってください。"
-    : stops.length + "件の位置を確認しました。");
+  const missed = stops.filter((s) => s.lat == null).length;
+  if (networkError && missed === stops.length) {
+    setStatus("住所検索に接続できませんでした。" + networkError);
+  } else if (missed) {
+    setStatus(stops.length + "件中" + missed + "件は番地が地図にありません。赤い行を直すと、その件もルートに入ります。");
+  } else {
+    setStatus(stops.length + "件の位置を確認しました。");
+  }
 }
 
 function areaObjects() {
@@ -419,10 +463,18 @@ function renderRoute(ordered) {
 
 async function plan() {
   saveForm();
+  try {
   await locateAll();
   const located = stops.filter((s) => s.lat != null);
+  if (!stops.length) {
+    setStatus("停留所が読み取れていません。画像をもう一度選ぶか、住所を1行ずつ貼ってください。");
+    $("review").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
   if (!located.length) {
-    setStatus("位置が取れた停留がありません。");
+    setStatus("停留は " + stops.length + " 件読みましたが、住所の位置が1件も取れませんでした。赤い行の番地を直して、もう一度押してください。");
+    $("review").hidden = false;
+    $("review").scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
   const departMin = FlexPlanner.clockToMin($("depart").value);
@@ -443,22 +495,31 @@ async function plan() {
     here: here || (marked ? { lat: marked.lat, lon: marked.lon } : null)
   });
   renderRoute(ordered);
+  } catch (e) {
+    setStatus(e && e.message ? e.message : "ルートを作れませんでした。");
+  }
 }
 
 async function ingestFiles(files) {
-  let text = "";
-  for (const file of files) {
-    setStatus(file.name + " を読んでいます");
-    text += "\n" + await readFile(file);
+  try {
+    let text = "";
+    for (const file of files) {
+      setStatus(file.name + " を読んでいます");
+      text += "\n" + await readFile(file);
+    }
+    const parsed = FlexPlanner.parseFlexText(text);
+    if (!parsed.length) {
+      $("paste").value = text.trim();
+      setStatus("画像から住所を分離できませんでした。下の欄に読み取り結果を出したので、住所の行だけ残してルートを作ってください。");
+      return;
+    }
+    mergeStops(parsed);
+    drawRows();
+    setStatus(stops.length + "件読みました。位置を確認してルートを作ります。");
+    await plan();
+  } catch (e) {
+    setStatus(e && e.message ? e.message : "画像の読み取りに失敗しました。");
   }
-  const parsed = FlexPlanner.parseFlexText(text);
-  if (!parsed.length) {
-    setStatus("住所を読み取れませんでした。画像を明るく取り直すか、下の欄に住所を貼ってください。");
-    return;
-  }
-  mergeStops(parsed);
-  drawRows();
-  setStatus(stops.length + "件読みました。番地を確認して、ルートを作ってください。");
 }
 
 function mergeStops(parsed) {

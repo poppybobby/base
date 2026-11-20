@@ -98,6 +98,9 @@ const sample = `| 9 | 次の目的地
 const parsed = p.parseFlexText(sample);
 assert.deepStrictEqual(parsed.map((s) => s.id), [9, 10, 11, 12]);
 assert.ok(parsed[0].address.includes("6-1-1"));
+const ken = p.parseFlexText("スケジュール済み 04:00 - 07:59\n福岡県紅葉ヶ丘西 6B-1-1 C-102 コモンシテ\n");
+assert.strictEqual(ken.length, 1);
+assert.ok(p.streetQuery(ken[0].address).includes("紅葉ヶ丘西6-1-1"), p.streetQuery(ken[0].address));
 assert.ok(parsed[1].address.includes("2-78"));
 assert.strictEqual(parsed[1].address.includes("ヶ丘"), true);
 assert.ok(parsed[2].address.includes("94-2"));

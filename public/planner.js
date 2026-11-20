@@ -201,14 +201,40 @@
       .trim();
   }
 
+  function looksLikeAddress(line) {
+    const s = String(line || "");
+    if (/(スケジュール|目的地|配達プラン|完了しました|G\.?\s*L)/i.test(s)) return false;
+    if (/(市|区|町|村|郡|丁目|番地)/.test(s) && /\d/.test(s)) return true;
+    if (/(都|道|府|県)/.test(s) && /\d/.test(s) && /[一-龠々]/.test(s)) return true;
+    return /[一-龠々ヶ]{2,}.*\d+\s*[-－]\s*\d+/.test(s);
+  }
+
   function streetQuery(address) {
     let s = normalizeAddress(address);
+    s = s.replace(/現在の目的地.*/g, "");
     s = s.replace(/[CＣ]棟.*/g, "");
     s = s.replace(/[CＣ]-?\d+.*/g, "");
     s = s.replace(/\d+棟.*/g, "");
     s = s.replace(/号室.*/g, "");
+    s = s.replace(/(\d)[A-Za-z](?=-\d)/g, "$1");
     s = s.replace(/[ァ-ヴー]{2,}.*/g, "");
-    return s.replace(/\s+/g, "");
+    s = s.replace(/[^\u3040-\u30ff\u4e00-\u9fff\d\-丁目番地号]/g, "");
+    return s;
+  }
+
+  function geocodeCandidates(address) {
+    const base = streetQuery(address);
+    const out = [];
+    function add(q) {
+      const v = String(q || "").trim();
+      if (v && !out.includes(v)) out.push(v);
+    }
+    add(base);
+    add(base.replace(/^(北海道|東京都|.{2,3}[都道府県])/, ""));
+    add(base.replace(/^.*?(?=(?:市|区|町|村))/, ""));
+    const chome = base.match(/(.+?[町村郡区市].*?\d+(?:丁目)?[\d\-]*)/);
+    if (chome) add(chome[1]);
+    return out;
   }
 
   function parseFlexText(text) {
@@ -254,11 +280,12 @@
         pendingId = Number(onlyId[1]);
         return;
       }
-      if (!/[市区県町村郡丁目番\d]/.test(line)) return;
+      if (!looksLikeAddress(line) && !(cur && cur.address && /[棟号]/.test(line) && /\d/.test(line))) return;
       if (!cur) {
         cur = { id: pendingId, windowStart: null, windowEnd: null, address: "" };
         pendingId = null;
       }
+      if (!looksLikeAddress(line) && !cur.address) return;
       cur.address = normalizeAddress((cur.address + " " + line).trim());
     });
     push();
@@ -457,5 +484,7 @@
     parseFlexText,
     normalizeAddress,
     streetQuery,
+    geocodeCandidates,
+    looksLikeAddress,
   };
 });
