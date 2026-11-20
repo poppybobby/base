@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>当日の最速ルート</title>
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=6">
-<script src="vendor/tesseract/tesseract.min.js?v=6"></script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=8">
+<script src="vendor/tesseract/tesseract.min.js?v=8"></script>
 <style>
   :root {
     --ink: #172028;
@@ -110,7 +110,7 @@
 <header>
   <div class="kicker">AMAZON FLEX · 毎日どの市でも</div>
   <h1>当日の最速ルート</h1>
-  <p class="muted" id="build">画面の版 6。江辻と書いてある行は、番地があっても配達先から外れます。</p>
+  <p class="muted" id="build">画面の版 8。読み取った並びの1件目は集荷、最後は持ち戻りなので、その2つだけ外します。</p>
   <p class="muted"><a href="audit.html">動作の監査</a></p>
   <p class="muted">出発と終了、渋滞エリア、配達リストの長尺画像。番地から全国の住所を引き、その日の条件で運転時間が短い順を作ります。</p>
 </header>
@@ -174,14 +174,15 @@
 <div class="bar" id="bar">
   <button type="button" id="primary">画像を選んでルートを作る</button>
 </div>
-<script src="vendor/leaflet/leaflet.js?v=6"></script>
-<script src="planner.js?v=6"></script>
+  <script src="vendor/leaflet/leaflet.js?v=8"></script>
+  <script src="planner.js?v=8"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
 const fileInput = $("file");
 let stops = [];
 let here = null;
+let endsRemoved = false;
 let workerPromise = null;
 let map, layer;
 
@@ -521,19 +522,25 @@ function drawMap(ordered) {
 async function plan() {
   saveForm();
   try {
-  const formStops = collectFromForm();
-  const droppedStation = formStops.some((s) => String(s.address).indexOf("江辻") !== -1 || FlexPlanner.isFlexStation(s.address));
-  stops = formStops.map((s) => Object.assign({}, s, { address: FlexPlanner.stripStation(s.address) })).filter((s) => s.address && s.address.indexOf("江辻") === -1);
+  let formStops = collectFromForm();
+  let droppedEnds = false;
+  if (!endsRemoved) {
+    const trimmed = FlexPlanner.withoutTerminalStops(formStops);
+    droppedEnds = formStops.length !== trimmed.length;
+    formStops = trimmed;
+    endsRemoved = true;
+  }
+  stops = formStops;
   drawRows();
-  await locateAll();
-  const located = stops.filter((s) => s.lat != null);
   if (!stops.length) {
-    setStatus(droppedStation
-      ? "ステーション（江辻）は配達先に入れていません。配達の住所が読み取れていないので、画像をもう一度選んでください。"
-      : "停留所が読み取れていません。画像をもう一度選ぶか、住所を1行ずつ貼ってください。");
+    setStatus(droppedEnds
+      ? "1件目の集荷と最後の持ち戻りを外しました。あいだの配達先が残っていません。"
+      : "停留所が読み取れていません。画像を選ぶか、住所を1行ずつ貼ってください。");
     $("review").scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
+  await locateAll();
+  const located = stops.filter((s) => s.lat != null);
   if (!located.length) {
     setStatus("停留は " + stops.length + " 件読みましたが、住所の位置が1件も取れませんでした。赤い行の番地を直して、もう一度押してください。");
     $("review").hidden = false;
@@ -558,7 +565,7 @@ async function plan() {
     here: here || (marked ? { lat: marked.lat, lon: marked.lon } : null)
   });
   renderRoute(ordered);
-  if (droppedStation) setStatus("ステーション（江辻）は外して、" + ordered.length + "件でルートを作りました。");
+  if (droppedEnds) setStatus("1件目の集荷と最後の持ち戻りを外して、" + ordered.length + "件でルートを作りました。");
   } catch (e) {
     setStatus(e && e.message ? e.message : "ルートを作れませんでした。");
   }
@@ -576,12 +583,13 @@ async function ingestFiles(files) {
     const parsed = FlexPlanner.parseFlexText(text);
     $("paste").value = text.trim();
     if (!parsed.length) {
-      const stationOnly = String(text).split(/\n/).some((line) => FlexPlanner.isFlexStation(line));
-      setStatus(stationOnly
-        ? "ステーション（江辻）は配達先に入れていません。配達の住所が読み取れていないので、画像をもう一度選んでください。"
-        : "画像から住所を分離できませんでした。下の欄に読み取り結果を出したので、住所の行だけ残してルートを作ってください。");
+      stops = [];
+      drawRows();
+      setStatus("画像から住所を分離できませんでした。下の欄に読み取り結果を出したので、住所の行だけ残してルートを作ってください。");
       return;
     }
+    stops = [];
+    endsRemoved = false;
     mergeStops(parsed);
     drawRows();
     setStatus(stops.length + "件読みました。位置を確認してルートを作ります。");
@@ -597,7 +605,6 @@ async function ingestFiles(files) {
 
 function mergeStops(parsed) {
   parsed.forEach((s) => {
-    if (FlexPlanner.isFlexStation(s.address)) return;
     const key = FlexPlanner.streetQuery(s.address);
     const prev = (s.id != null && stops.find((x) => x.id === s.id))
       || stops.find((x) => FlexPlanner.streetQuery(x.address) === key);

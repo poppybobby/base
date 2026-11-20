@@ -36,7 +36,7 @@
     <tbody id="rows"></tbody>
   </table>
 </main>
-<script src="planner.js?v=6"></script>
+<script src="planner.js?v=8"></script>
 <script>
 const rows = document.getElementById("rows");
 const results = [];
@@ -48,25 +48,23 @@ function add(name, ok, detail) {
   rows.appendChild(tr);
 }
 
-function pageFilter(addresses) {
-  return addresses
-    .map((address) => FlexPlanner.stripStation(address))
-    .filter((address) => address && address.indexOf("江辻") === -1);
-}
-
 function runLocal(source) {
-  add("画面は版6", source.includes("画面の版 6") && source.includes("planner.js?v=6"), source.includes("画面の版 6") ? "版6の画面" : "版の表示が違う");
-  add("画面が江辻を外す", source.includes("stripStation") && source.includes('indexOf("江辻")') && source.includes("ステーション（江辻）"), "外す処理と文言");
+  add("画面は版8", source.includes("画面の版 8") && source.includes("planner.js?v=8"), source.includes("画面の版 8") ? "版8の画面" : "版の表示が違う");
+  add("1件目と最後だけ外す", source.includes("withoutTerminalStops") && source.includes("集荷") && !source.includes('indexOf("江辻")'), "位置で除外");
 
-  const banned = ["柏屋町江辻84C", "柏屋町江辻84-1", "春日市柏屋町江辻1丁目2-3", "江辻"];
-  banned.forEach((address) => {
-    const left = pageFilter([address]);
-    add("江辻を残さない " + address, left.length === 0 && FlexPlanner.isFlexStation(address), left.join(" / ") || "行なし");
-  });
+  const day = FlexPlanner.parseFlexText("Logiport福岡南\nスケジュール済み 04:00 - 07:59\n福岡市博多区光丘町1丁目1\nスケジュール済み 04:00 - 07:59\n春日市天神山4-117\nスケジュール済み 04:00 - 07:59\n柏屋町江辻84C");
+  const mid = FlexPlanner.withoutTerminalStops(day);
+  add("端の集荷と持ち戻りを外す", mid.length === 2 && mid[0].address.includes("光丘町1丁目1") && mid[1].address.includes("天神山4-117"), mid.map((s) => s.address).join(" | ") || "行なし");
+  const kept = FlexPlanner.withoutTerminalStops(FlexPlanner.parseFlexText("Logiport福岡南\nスケジュール済み 05:00 - 21:00\n春日市柏屋町江辻1丁目2-3\nスケジュール済み 05:00 - 21:00\n柏屋町江辻84C"));
+  add("あいだの江辻の番地は残す", kept.length === 1 && kept[0].address.includes("江辻1丁目2-3"), kept.map((s) => s.address).join(" | ") || "行なし");
+  add("1件だけなら配達先は残さない", FlexPlanner.withoutTerminalStops([{ address: "Logiport福岡南" }]).length === 0, "1件");
+  add("2件だけならあいだは無い", FlexPlanner.withoutTerminalStops(day.slice(0, 2)).length === 0, "2件");
 
-  const mixed = pageFilter(["春日市天神山4-117 柏屋町江辻84C", "春日市紅葉ヶ丘西2-78"]);
-  add("同じ行の配達先は残す", mixed.length === 2 && mixed.every((a) => a.indexOf("江辻") === -1) && mixed[0].includes("天神山4-117"), mixed.join(" | "));
-
+  const screen = FlexPlanner.parseFlexText("# S.L02.0V\n福岡市 博多区 光丘町1丁目1\n0 22:52に配達を完了\nLogiport福岡南");
+  const screenSame = FlexPlanner.parseFlexText("# S.L02.0V 福岡市 博多区 光丘町1丁目1 Logiport福岡南");
+  add("光丘町を読む", screen.length === 2 && screen[0].address.includes("光丘町1丁目1") && /logiport/i.test(screen[1].address), screen.map((s) => s.address).join(" | ") || "行なし");
+  add("その2件は集荷と持ち戻り", FlexPlanner.withoutTerminalStops(screen).length === 0, String(FlexPlanner.withoutTerminalStops(screen).length));
+  add("ルート番号と同じ行の番地も残す", screenSame.length === 1 && screenSame[0].address.includes("光丘町1丁目1") && !/logiport/i.test(screenSame[0].address), screenSame.map((s) => s.address).join(" | ") || "行なし");
   const sample = FlexPlanner.parseFlexText("| 9 | 次の目的地\nスケジュール済み 04:00 - 07:59\n福岡県紅葉ヶ丘西 6-1-1 C-102\nスケジュール済み 04:00 - 07:59\n春日市紅葉ヶ丘西 2-78\n|11| スケジュール済み 04:00 - 07:59\n春日市一の谷 4丁目94-2\n| 12| スケジュール済み 04:00 - 07:59\n春日市天神山 4-117");
   add("リスト4件の番号", sample.map((s) => s.id).join(",") === "9,10,11,12", sample.map((s) => s.id).join(","));
   add("次の目的地は先頭", sample[0] && sample[0].current === true, String(sample[0] && sample[0].current));
@@ -126,6 +124,8 @@ async function runGeo() {
   const momiji = await locate("福岡県紅葉ヶ丘西6-1-1");
   const notPrefecture = momiji && Math.abs(momiji.lat - 33.606388) > 0.05;
   add("紅葉ヶ丘西は県の中心に落ちない", near(momiji, 33.522453, 130.454285) && notPrefecture, momiji ? momiji.q + " → " + momiji.title : "位置なし");
+  const hikarigaoka = await locate("福岡市博多区光丘町1丁目1");
+  add("光丘町1丁目の位置が取れる", near(hikarigaoka, 33.540054, 130.466263), hikarigaoka ? hikarigaoka.title + " " + hikarigaoka.lat.toFixed(5) + "," + hikarigaoka.lon.toFixed(5) : "位置なし");
 }
 
 function finish() {
@@ -138,7 +138,7 @@ function finish() {
 (async function () {
   let source = "";
   try {
-    source = await fetch("index.html?v=6", { cache: "no-store" }).then((r) => r.text());
+    source = await fetch("index.html?v=8", { cache: "no-store" }).then((r) => r.text());
   } catch (e) {
     source = "";
   }

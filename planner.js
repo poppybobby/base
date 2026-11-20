@@ -239,21 +239,32 @@
     return out;
   }
 
-  function stripStation(address) {
-    return String(address || "")
-      .split(/\s+/)
-      .filter((part) => part && part.indexOf("江辻") === -1 && !/ステーション|ピックアップ|受け取り場所/.test(part))
-      .join(" ")
+  function looksLikeTerminalLabel(line) {
+    return /logiport|ロジポート|江辻|ステーション|ピックアップ|受け取り場所/i.test(String(line || ""));
+  }
+
+  function peelTerminal(address) {
+    const s = String(address || "").trim();
+    const peeled = s.replace(/(?:^|\s)(?:logiport|ロジポート|ステーション|ピックアップ|受け取り場所).*$/i, "").trim();
+    if (peeled && peeled !== s && looksLikeAddress(peeled)) return peeled;
+    return s;
+  }
+
+  function stripNoise(line) {
+    return String(line || "")
+      .replace(/#?\s*S\.?\s*L[0-9A-Z.]*/gi, " ")
+      .replace(/G\.?\s*L[0-9A-Z.]*/gi, " ")
+      .replace(/\d{1,2}:\d{2}\s*に\s*配達を完了/g, " ")
+      .replace(/配達を完了/g, " ")
+      .replace(/\s+/g, " ")
       .trim();
   }
 
-  // 江辻は拠点の名前。番地が付いていても配達先にしない。
-  function isFlexStation(address) {
-    const s = normalizeAddress(address);
-    if (!s) return false;
-    if (s.indexOf("江辻") !== -1 && !stripStation(s)) return true;
-    if (/ステーション|ピックアップ|受け取り場所/.test(s) && !stripStation(s)) return true;
-    return false;
+  // 集荷は1件目、持ち戻りは最後。あいだだけが配達先。
+  function withoutTerminalStops(stops) {
+    const list = stops || [];
+    if (list.length < 3) return [];
+    return list.slice(1, -1);
   }
 
   function parseFlexText(text) {
@@ -278,7 +289,8 @@
         pendingCurrent = true;
         return;
       }
-      if (/^#/.test(line) || /G\.?\s*L/i.test(line) || /^[0-9]G$/.test(line) || line === "人") return;
+      line = stripNoise(line);
+      if (!line || /^[0-9]G$/.test(line) || line === "人") return;
       const tm = line.match(/(\d{1,2}:\d{2})\s*[-–ー~〜]\s*(\d{1,2}:\d{2})/);
       if (tm) {
         push();
@@ -299,14 +311,20 @@
         pendingId = Number(onlyId[1]);
         return;
       }
-      if (isFlexStation(line)) return;
-      if (!looksLikeAddress(line) && !(cur && cur.address && /[棟号]/.test(line) && /\d/.test(line))) return;
+      if (!looksLikeAddress(line) && !(cur && cur.address && /[棟号]/.test(line) && /\d/.test(line))) {
+        if (looksLikeTerminalLabel(line)) {
+          push();
+          stops.push({ id: pendingId, windowStart: null, windowEnd: null, address: line, current: false });
+          pendingId = null;
+        }
+        return;
+      }
       if (!cur) {
         cur = { id: pendingId, windowStart: null, windowEnd: null, address: "" };
         pendingId = null;
       }
       if (!looksLikeAddress(line) && !cur.address) return;
-      cur.address = normalizeAddress((cur.address + " " + line).trim());
+      cur.address = peelTerminal(normalizeAddress((cur.address + " " + line).trim()));
     });
     push();
 
@@ -317,10 +335,10 @@
       if (prev != null && next && next.id === prev + 2) stops[i].id = prev + 1;
     }
     return stops.map((s) => Object.assign({}, s, {
-      address: stripStation(normalizeAddress(s.address)),
+      address: peelTerminal(stripNoise(normalizeAddress(s.address))),
       windowEndMin: clockToMin(s.windowEnd),
       windowStartMin: clockToMin(s.windowStart),
-    })).filter((s) => s.address && !isFlexStation(s.address));
+    })).filter((s) => s.address);
   }
 
   function bearing(a, b) {
@@ -513,8 +531,10 @@
     streetQuery,
     geocodeCandidates,
     looksLikeAddress,
-    isFlexStation,
-    stripStation,
+    isFlexStation: function () { return false; },
+    stripStation: stripNoise,
+    stripNoise,
+    withoutTerminalStops,
     tooCoarse,
   };
 });
