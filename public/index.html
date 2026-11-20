@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>当日の最速ルート</title>
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=8">
-<script src="vendor/tesseract/tesseract.min.js?v=8"></script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=9">
+<script src="vendor/tesseract/tesseract.min.js?v=9"></script>
 <style>
   :root {
     --ink: #172028;
@@ -110,7 +110,7 @@
 <header>
   <div class="kicker">AMAZON FLEX · 毎日どの市でも</div>
   <h1>当日の最速ルート</h1>
-  <p class="muted" id="build">画面の版 8。読み取った並びの1件目は集荷、最後は持ち戻りなので、その2つだけ外します。</p>
+  <p class="muted" id="build">画面の版 9。Logiport と、市の付かない江辻だけ外します。市や区の番地は残します。</p>
   <p class="muted"><a href="audit.html">動作の監査</a></p>
   <p class="muted">出発と終了、渋滞エリア、配達リストの長尺画像。番地から全国の住所を引き、その日の条件で運転時間が短い順を作ります。</p>
 </header>
@@ -174,8 +174,8 @@
 <div class="bar" id="bar">
   <button type="button" id="primary">画像を選んでルートを作る</button>
 </div>
-  <script src="vendor/leaflet/leaflet.js?v=8"></script>
-  <script src="planner.js?v=8"></script>
+  <script src="vendor/leaflet/leaflet.js?v=9"></script>
+  <script src="planner.js?v=9"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -534,7 +534,7 @@ async function plan() {
   drawRows();
   if (!stops.length) {
     setStatus(droppedEnds
-      ? "1件目の集荷と最後の持ち戻りを外しました。あいだの配達先が残っていません。"
+      ? "拠点の行だけで、配達の番地が残っていません。画像をもう一度選んでください。"
       : "停留所が読み取れていません。画像を選ぶか、住所を1行ずつ貼ってください。");
     $("review").scrollIntoView({ behavior: "smooth", block: "start" });
     return;
@@ -565,7 +565,7 @@ async function plan() {
     here: here || (marked ? { lat: marked.lat, lon: marked.lon } : null)
   });
   renderRoute(ordered);
-  if (droppedEnds) setStatus("1件目の集荷と最後の持ち戻りを外して、" + ordered.length + "件でルートを作りました。");
+  if (droppedEnds) setStatus("拠点の行を外して、" + ordered.length + "件でルートを作りました。");
   } catch (e) {
     setStatus(e && e.message ? e.message : "ルートを作れませんでした。");
   }

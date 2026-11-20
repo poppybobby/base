@@ -260,11 +260,17 @@
       .trim();
   }
 
-  // 集荷は1件目、持ち戻りは最後。あいだだけが配達先。
+  // 市や区の番地は配達先。Logiport や、市の付かない江辻は拠点の行。
+  function isStationNotation(address) {
+    const s = String(address || "");
+    if (/(市|区|郡)/.test(s) && /\d/.test(s)) return false;
+    return /logiport|ロジポート|江辻|ステーション|ピックアップ|受け取り場所/i.test(s);
+  }
+
+  // 拠点の行だけ外す。市や区の番地は、並びの端でも残す。
   function withoutTerminalStops(stops) {
     const list = stops || [];
-    if (list.length < 3) return [];
-    return list.slice(1, -1);
+    return list.filter((s) => !isStationNotation(s.address));
   }
 
   function parseFlexText(text) {
@@ -276,10 +282,19 @@
     let cur = null;
     let pendingId = null;
     let pendingCurrent = false;
+    let pendingPlace = "";
 
     function push() {
       if (cur && cur.address) stops.push(cur);
       cur = null;
+    }
+
+    function openStop() {
+      if (!cur) {
+        cur = { id: pendingId, windowStart: null, windowEnd: null, address: "", current: pendingCurrent };
+        pendingId = null;
+        pendingCurrent = false;
+      }
     }
 
     lines.forEach((line) => {
@@ -294,6 +309,7 @@
       const tm = line.match(/(\d{1,2}:\d{2})\s*[-–ー~〜]\s*(\d{1,2}:\d{2})/);
       if (tm) {
         push();
+        pendingPlace = "";
         const idIn = line.match(/(?:^|\s)(\d{1,3})(?:\s|$)/);
         cur = {
           id: pendingId != null ? pendingId : (idIn ? Number(idIn[1]) : null),
@@ -312,19 +328,30 @@
         return;
       }
       if (!looksLikeAddress(line) && !(cur && cur.address && /[棟号]/.test(line) && /\d/.test(line))) {
-        if (looksLikeTerminalLabel(line)) {
+        if (looksLikeTerminalLabel(line) && !/(市|区|郡)/.test(line)) {
           push();
+          pendingPlace = "";
           stops.push({ id: pendingId, windowStart: null, windowEnd: null, address: line, current: false });
           pendingId = null;
+          return;
+        }
+        if (/(市|区|町|村|郡)/.test(line) && !/\d/.test(line)) {
+          pendingPlace = (pendingPlace + " " + line).trim();
+          return;
+        }
+        if (/^\d/.test(line) && (cur || pendingPlace)) {
+          openStop();
+          cur.address = peelTerminal(normalizeAddress((pendingPlace + " " + cur.address + " " + line).trim()));
+          pendingPlace = "";
         }
         return;
       }
-      if (!cur) {
-        cur = { id: pendingId, windowStart: null, windowEnd: null, address: "" };
-        pendingId = null;
+      if (cur && cur.address && looksLikeAddress(cur.address) && looksLikeAddress(line)) {
+        push();
       }
-      if (!looksLikeAddress(line) && !cur.address) return;
-      cur.address = peelTerminal(normalizeAddress((cur.address + " " + line).trim()));
+      openStop();
+      cur.address = peelTerminal(normalizeAddress((pendingPlace + " " + cur.address + " " + line).trim()));
+      pendingPlace = "";
     });
     push();
 

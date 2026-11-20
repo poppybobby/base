@@ -36,7 +36,7 @@
     <tbody id="rows"></tbody>
   </table>
 </main>
-<script src="planner.js?v=8"></script>
+<script src="planner.js?v=9"></script>
 <script>
 const rows = document.getElementById("rows");
 const results = [];
@@ -49,8 +49,8 @@ function add(name, ok, detail) {
 }
 
 function runLocal(source) {
-  add("画面は版8", source.includes("画面の版 8") && source.includes("planner.js?v=8"), source.includes("画面の版 8") ? "版8の画面" : "版の表示が違う");
-  add("1件目と最後だけ外す", source.includes("withoutTerminalStops") && source.includes("集荷") && !source.includes('indexOf("江辻")'), "位置で除外");
+  add("画面は版9", source.includes("画面の版 9") && source.includes("planner.js?v=9"), source.includes("画面の版 9") ? "版9の画面" : "版の表示が違う");
+  add("1件目と最後だけ外す", source.includes("withoutTerminalStops") && source.includes("市や区の番地") && !source.includes('indexOf("江辻")'), "市区の番地は残す");
 
   const day = FlexPlanner.parseFlexText("Logiport福岡南\nスケジュール済み 04:00 - 07:59\n福岡市博多区光丘町1丁目1\nスケジュール済み 04:00 - 07:59\n春日市天神山4-117\nスケジュール済み 04:00 - 07:59\n柏屋町江辻84C");
   const mid = FlexPlanner.withoutTerminalStops(day);
@@ -58,14 +58,16 @@ function runLocal(source) {
   const kept = FlexPlanner.withoutTerminalStops(FlexPlanner.parseFlexText("Logiport福岡南\nスケジュール済み 05:00 - 21:00\n春日市柏屋町江辻1丁目2-3\nスケジュール済み 05:00 - 21:00\n柏屋町江辻84C"));
   add("あいだの江辻の番地は残す", kept.length === 1 && kept[0].address.includes("江辻1丁目2-3"), kept.map((s) => s.address).join(" | ") || "行なし");
   add("1件だけなら配達先は残さない", FlexPlanner.withoutTerminalStops([{ address: "Logiport福岡南" }]).length === 0, "1件");
-  add("2件だけならあいだは無い", FlexPlanner.withoutTerminalStops(day.slice(0, 2)).length === 0, "2件");
+  add("2件なら市区の番地を残す", FlexPlanner.withoutTerminalStops(day.slice(0, 2)).length === 1 && FlexPlanner.withoutTerminalStops(day.slice(0, 2))[0].address.includes("光丘町"), "光丘町");
 
   const screen = FlexPlanner.parseFlexText("# S.L02.0V\n福岡市 博多区 光丘町1丁目1\n0 22:52に配達を完了\nLogiport福岡南");
   const screenSame = FlexPlanner.parseFlexText("# S.L02.0V 福岡市 博多区 光丘町1丁目1 Logiport福岡南");
   add("光丘町を読む", screen.length === 2 && screen[0].address.includes("光丘町1丁目1") && /logiport/i.test(screen[1].address), screen.map((s) => s.address).join(" | ") || "行なし");
-  add("その2件は集荷と持ち戻り", FlexPlanner.withoutTerminalStops(screen).length === 0, String(FlexPlanner.withoutTerminalStops(screen).length));
+  const forbidden = "あいだの配達先が残っていません";
+  add("本番の貼り付けで空と言わない", FlexPlanner.withoutTerminalStops(screen).some((s) => s.address.includes("光丘町1丁目1")) && !FlexPlanner.withoutTerminalStops(screen).some((s) => /logiport/i.test(s.address)), FlexPlanner.withoutTerminalStops(screen).map((s) => s.address).join(" | ") || forbidden);
   add("ルート番号と同じ行の番地も残す", screenSame.length === 1 && screenSame[0].address.includes("光丘町1丁目1") && !/logiport/i.test(screenSame[0].address), screenSame.map((s) => s.address).join(" | ") || "行なし");
   const sample = FlexPlanner.parseFlexText("| 9 | 次の目的地\nスケジュール済み 04:00 - 07:59\n福岡県紅葉ヶ丘西 6-1-1 C-102\nスケジュール済み 04:00 - 07:59\n春日市紅葉ヶ丘西 2-78\n|11| スケジュール済み 04:00 - 07:59\n春日市一の谷 4丁目94-2\n| 12| スケジュール済み 04:00 - 07:59\n春日市天神山 4-117");
+  add("春日4件は拠点ではないので残す", FlexPlanner.withoutTerminalStops(sample).length === 4, FlexPlanner.withoutTerminalStops(sample).map((s) => s.id).join(",") || forbidden);
   add("リスト4件の番号", sample.map((s) => s.id).join(",") === "9,10,11,12", sample.map((s) => s.id).join(","));
   add("次の目的地は先頭", sample[0] && sample[0].current === true, String(sample[0] && sample[0].current));
   add("県名だけの重心は捨てる", FlexPlanner.tooCoarse("福岡県紅葉ヶ丘西6-1-1", "福岡県") === true, "福岡県");
@@ -138,7 +140,7 @@ function finish() {
 (async function () {
   let source = "";
   try {
-    source = await fetch("index.html?v=8", { cache: "no-store" }).then((r) => r.text());
+    source = await fetch("index.html?v=9", { cache: "no-store" }).then((r) => r.text());
   } catch (e) {
     source = "";
   }
