@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>動作の監査</title>
+<style>
+  :root { --ink: #172028; --muted: #5d6b78; --paper: #f4f0e7; --card: #fffdf8; --line: #e3d9c6; --teal: #0d5c66; --red: #8d2d2d; --green: #1c7a45; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif; color: var(--ink); background: var(--paper); line-height: 1.5; }
+  header, main { max-width: 760px; margin: 0 auto; padding: 20px 16px 32px; }
+  h1 { font-size: 28px; line-height: 1.25; margin: 4px 0 8px; }
+  a { color: var(--teal); font-weight: 700; }
+  .verdict { border-radius: 16px; padding: 16px; font-size: 22px; font-weight: 800; }
+  .wait { background: #fff6e8; }
+  .pass { background: #e7f6ee; color: var(--green); }
+  .fail { background: #fdecec; color: var(--red); }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 16px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 14px; }
+  th { color: var(--muted); font-size: 12px; }
+  .ok { color: var(--green); font-weight: 800; }
+  .ng { color: var(--red); font-weight: 800; }
+  code { font-family: ui-monospace, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <p><a href="index.html">当日の最速ルートへ戻る</a></p>
+  <h1>動作の監査</h1>
+  <p>配達アプリと同じ計画コードで、これまで本番で止まった条件を検査します。</p>
+  <div id="verdict" class="verdict wait">検査しています</div>
+</header>
+<main>
+  <table>
+    <thead><tr><th>結果</th><th>検査</th><th>内容</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+<script src="planner.js?v=6"></script>
+<script>
+const rows = document.getElementById("rows");
+const results = [];
+
+function add(name, ok, detail) {
+  results.push({ name, ok, detail });
+  const tr = document.createElement("tr");
+  tr.innerHTML = "<td class='" + (ok ? "ok" : "ng") + "'>" + (ok ? "合格" : "不合格") + "</td><td>" + name + "</td><td><code>" + detail + "</code></td>";
+  rows.appendChild(tr);
+}
+
+function pageFilter(addresses) {
+  return addresses
+    .map((address) => FlexPlanner.stripStation(address))
+    .filter((address) => address && address.indexOf("江辻") === -1);
+}
+
+function runLocal(source) {
+  add("画面は版6", source.includes("画面の版 6") && source.includes("planner.js?v=6"), source.includes("画面の版 6") ? "版6の画面" : "版の表示が違う");
+  add("画面が江辻を外す", source.includes("stripStation") && source.includes('indexOf("江辻")') && source.includes("ステーション（江辻）"), "外す処理と文言");
+
+  const banned = ["柏屋町江辻84C", "柏屋町江辻84-1", "春日市柏屋町江辻1丁目2-3", "江辻"];
+  banned.forEach((address) => {
+    const left = pageFilter([address]);
+    add("江辻を残さない " + address, left.length === 0 && FlexPlanner.isFlexStation(address), left.join(" / ") || "行なし");
+  });
+
+  const mixed = pageFilter(["春日市天神山4-117 柏屋町江辻84C", "春日市紅葉ヶ丘西2-78"]);
+  add("同じ行の配達先は残す", mixed.length === 2 && mixed.every((a) => a.indexOf("江辻") === -1) && mixed[0].includes("天神山4-117"), mixed.join(" | "));
+
+  const sample = FlexPlanner.parseFlexText("| 9 | 次の目的地\nスケジュール済み 04:00 - 07:59\n福岡県紅葉ヶ丘西 6-1-1 C-102\nスケジュール済み 04:00 - 07:59\n春日市紅葉ヶ丘西 2-78\n|11| スケジュール済み 04:00 - 07:59\n春日市一の谷 4丁目94-2\n| 12| スケジュール済み 04:00 - 07:59\n春日市天神山 4-117");
+  add("リスト4件の番号", sample.map((s) => s.id).join(",") === "9,10,11,12", sample.map((s) => s.id).join(","));
+  add("次の目的地は先頭", sample[0] && sample[0].current === true, String(sample[0] && sample[0].current));
+  add("県名だけの重心は捨てる", FlexPlanner.tooCoarse("福岡県紅葉ヶ丘西6-1-1", "福岡県") === true, "福岡県");
+  add("丁目のある結果は残す", FlexPlanner.tooCoarse("紅葉ヶ丘西6-1-1", "春日市紅葉ヶ丘西六丁目") === false, "春日市紅葉ヶ丘西六丁目");
+
+  const queries = FlexPlanner.geocodeCandidates("福岡県紅葉ヶ丘西 6B-1-1 C-102");
+  add("県名を外した検索語がある", queries.some((q) => q.includes("紅葉ヶ丘西6-1-1") && !q.startsWith("福岡県")), queries.join(" | "));
+
+  const early = { id: "early", address: "締切が朝", lat: 33.52, lon: 130.45, windowEndMin: 7 * 60 + 59 };
+  const later = { id: "later", address: "締切が夜", lat: 33.53, lon: 130.46, windowEndMin: 21 * 60 };
+  const atEight = FlexPlanner.planDay([later, early], { departMin: 8 * 60 });
+  add("8時出発では締切7:59が先", atEight[0].id === "early" && atEight[1].arriveMin >= 9 * 60, atEight.map((s) => s.id + "@" + FlexPlanner.formatMin(s.arriveMin)).join(" "));
+  const inside = FlexPlanner.planDay([later], { departMin: 8 * 60, endMin: 8 * 60 + 30 });
+  add("終了が9時前なら規制中でも回る", inside[0].arriveMin < 9 * 60, FlexPlanner.formatMin(inside[0].arriveMin));
+
+  const kasuga = FlexPlanner.planDay([
+    { id: 9, address: "春日市紅葉ヶ丘西6-1-1", lat: 33.522453, lon: 130.454285, windowEndMin: 7 * 60 + 59 },
+    { id: 10, address: "春日市紅葉ヶ丘西2-78", lat: 33.521805, lon: 130.455276, windowEndMin: 7 * 60 + 59 },
+    { id: 11, address: "春日市一の谷4丁目94-2", lat: 33.520412, lon: 130.448502, windowEndMin: 7 * 60 + 59 },
+    { id: 12, address: "春日市天神山4-117", lat: 33.515583, lon: 130.450897, windowEndMin: 7 * 60 + 59 }
+  ], { departMin: 5 * 60 + 13, here: { lat: 33.522453, lon: 130.454285 } });
+  add("春日4件は7時前に着く", kasuga.every((s) => s.arriveMin < 7 * 60), kasuga.map((s) => s.id + "@" + FlexPlanner.formatMin(s.arriveMin)).join(" "));
+
+  const legs = FlexPlanner.chunkLegs(Array.from({ length: 25 }, (_, i) => ({ id: i, lat: i, lon: i })), 10);
+  const nav = FlexPlanner.mapsUrl(legs[0], true);
+  add("ナビは現在地から開始", nav.includes("dir_action=navigate") && !nav.includes("origin="), nav.slice(0, 80));
+  add("25件は3区間", legs.length === 3 && legs[1][0].id === 9, String(legs.length));
+
+  const ccw = FlexPlanner.orderCounterclockwise(
+    [{ id: "N", lat: 1, lon: 0 }, { id: "E", lat: 0, lon: 1 }, { id: "S", lat: -1, lon: 0 }, { id: "W", lat: 0, lon: -1 }],
+    { lat: 1, lon: 0 }
+  ).map((s) => s.id).join(",");
+  add("同じ距離なら左回り", ccw === "N,W,S,E", ccw);
+}
+
+async function locate(address) {
+  const queries = FlexPlanner.geocodeCandidates(address);
+  for (const q of queries) {
+    const data = await fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(q)).then((r) => r.json());
+    if (!data || !data.length) continue;
+    const title = data[0].properties.title;
+    if (FlexPlanner.tooCoarse(q, title)) continue;
+    return { q, title, lat: data[0].geometry.coordinates[1], lon: data[0].geometry.coordinates[0] };
+  }
+  return null;
+}
+
+function near(hit, lat, lon) {
+  if (!hit) return false;
+  return Math.abs(hit.lat - lat) < 0.02 && Math.abs(hit.lon - lon) < 0.02;
+}
+
+async function runGeo() {
+  const tenjin = await locate("春日市天神山4-117");
+  add("天神山は春日の番地", near(tenjin, 33.515583, 130.450897), tenjin ? tenjin.title + " " + tenjin.lat.toFixed(5) + "," + tenjin.lon.toFixed(5) : "位置なし");
+  const momiji = await locate("福岡県紅葉ヶ丘西6-1-1");
+  const notPrefecture = momiji && Math.abs(momiji.lat - 33.606388) > 0.05;
+  add("紅葉ヶ丘西は県の中心に落ちない", near(momiji, 33.522453, 130.454285) && notPrefecture, momiji ? momiji.q + " → " + momiji.title : "位置なし");
+}
+
+function finish() {
+  const failed = results.filter((r) => !r.ok);
+  const box = document.getElementById("verdict");
+  box.className = "verdict " + (failed.length ? "fail" : "pass");
+  box.textContent = failed.length ? "不合格 " + failed.length + "件。最初は「" + failed[0].name + "」" : "合格 " + results.length + "件";
+}
+
+(async function () {
+  let source = "";
+  try {
+    source = await fetch("index.html?v=6", { cache: "no-store" }).then((r) => r.text());
+  } catch (e) {
+    source = "";
+  }
+  try {
+    runLocal(source);
+  } catch (e) {
+    add("検査そのもの", false, e && e.message ? e.message : "停止");
+  }
+  try {
+    await runGeo();
+  } catch (e) {
+    add("住所検索への接続", false, e && e.message ? e.message : "接続できない");
+  }
+  finish();
+})();
+</script>
+</body>
+</html>

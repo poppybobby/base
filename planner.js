@@ -468,6 +468,13 @@
     return timed;
   }
 
+  function tooCoarse(query, title) {
+    const t = String(title || "").replace(/\s/g, "");
+    if (/^(北海道|東京都|.+?[都道府県])$/.test(t)) return true;
+    if (/\d/.test(query) && !/[\d丁目番地]/.test(t)) return true;
+    return false;
+  }
+
   function mapsUrl(leg, fromHere) {
     if (!leg.length) return "";
     const dest = leg[leg.length - 1];
@@ -508,5 +515,6 @@
     looksLikeAddress,
     isFlexStation,
     stripStation,
+    tooCoarse,
   };
 });

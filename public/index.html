@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>当日の最速ルート</title>
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=5">
-<script src="vendor/tesseract/tesseract.min.js?v=5"></script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=6">
+<script src="vendor/tesseract/tesseract.min.js?v=6"></script>
 <style>
   :root {
     --ink: #172028;
@@ -110,7 +110,8 @@
 <header>
   <div class="kicker">AMAZON FLEX · 毎日どの市でも</div>
   <h1>当日の最速ルート</h1>
-  <p class="muted" id="build">画面の版 5。江辻と書いてある行は、番地があっても配達先から外れます。</p>
+  <p class="muted" id="build">画面の版 6。江辻と書いてある行は、番地があっても配達先から外れます。</p>
+  <p class="muted"><a href="audit.html">動作の監査</a></p>
   <p class="muted">出発と終了、渋滞エリア、配達リストの長尺画像。番地から全国の住所を引き、その日の条件で運転時間が短い順を作ります。</p>
 </header>
 <main>
@@ -173,8 +174,8 @@
 <div class="bar" id="bar">
   <button type="button" id="primary">画像を選んでルートを作る</button>
 </div>
-<script src="vendor/leaflet/leaflet.js?v=5"></script>
-<script src="planner.js?v=5"></script>
+<script src="vendor/leaflet/leaflet.js?v=6"></script>
+<script src="planner.js?v=6"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -208,10 +209,7 @@ $("areas").addEventListener("input", saveForm);
 function setStatus(text) { statusEl.textContent = text; }
 
 function tooCoarse(query, title) {
-  const t = String(title || "").replace(/\s/g, "");
-  if (/^(北海道|東京都|.+?[都道府県])$/.test(t)) return true;
-  if (/\d/.test(query) && !/[\d丁目番地]/.test(t)) return true;
-  return false;
+  return FlexPlanner.tooCoarse(query, title);
 }
 
 async function geocodeQuery(query) {
