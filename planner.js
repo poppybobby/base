@@ -239,6 +239,14 @@
     return out;
   }
 
+  // 江辻は拠点の名前。丁目や「1-2」の番地が無い行は配達先にしない。
+  function isFlexStation(address) {
+    const s = normalizeAddress(address).replace(/\s/g, "");
+    if (!s) return false;
+    if (/ステーション|ピックアップ|受け取り場所/.test(s)) return true;
+    return /江辻/.test(s) && !/丁目/.test(s) && !/\d+-\d+/.test(s);
+  }
+
   function parseFlexText(text) {
     const lines = String(text || "")
       .split(/\n/)
@@ -282,6 +290,7 @@
         pendingId = Number(onlyId[1]);
         return;
       }
+      if (isFlexStation(line)) return;
       if (!looksLikeAddress(line) && !(cur && cur.address && /[棟号]/.test(line) && /\d/.test(line))) return;
       if (!cur) {
         cur = { id: pendingId, windowStart: null, windowEnd: null, address: "" };
@@ -302,7 +311,7 @@
       address: normalizeAddress(s.address),
       windowEndMin: clockToMin(s.windowEnd),
       windowStartMin: clockToMin(s.windowStart),
-    }));
+    })).filter((s) => !isFlexStation(s.address));
   }
 
   function bearing(a, b) {
@@ -488,5 +497,6 @@
     streetQuery,
     geocodeCandidates,
     looksLikeAddress,
+    isFlexStation,
   };
 });

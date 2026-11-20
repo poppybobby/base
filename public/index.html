@@ -513,10 +513,16 @@ function drawMap(ordered) {
 async function plan() {
   saveForm();
   try {
+  const formStops = collectFromForm();
+  const droppedStation = formStops.some((s) => FlexPlanner.isFlexStation(s.address));
+  stops = formStops.filter((s) => !FlexPlanner.isFlexStation(s.address));
+  drawRows();
   await locateAll();
   const located = stops.filter((s) => s.lat != null);
   if (!stops.length) {
-    setStatus("停留所が読み取れていません。画像をもう一度選ぶか、住所を1行ずつ貼ってください。");
+    setStatus(droppedStation
+      ? "ステーション（江辻）は配達先に入れていません。配達の住所が読み取れていないので、画像をもう一度選んでください。"
+      : "停留所が読み取れていません。画像をもう一度選ぶか、住所を1行ずつ貼ってください。");
     $("review").scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
@@ -544,6 +550,7 @@ async function plan() {
     here: here || (marked ? { lat: marked.lat, lon: marked.lon } : null)
   });
   renderRoute(ordered);
+  if (droppedStation) setStatus("ステーション（江辻）は外して、" + ordered.length + "件でルートを作りました。");
   } catch (e) {
     setStatus(e && e.message ? e.message : "ルートを作れませんでした。");
   }
@@ -560,8 +567,11 @@ async function ingestFiles(files) {
     }
     const parsed = FlexPlanner.parseFlexText(text);
     if (!parsed.length) {
+      const stationOnly = String(text).split(/\n/).some((line) => FlexPlanner.isFlexStation(line));
       $("paste").value = text.trim();
-      setStatus("画像から住所を分離できませんでした。下の欄に読み取り結果を出したので、住所の行だけ残してルートを作ってください。");
+      setStatus(stationOnly
+        ? "ステーション（江辻）は配達先に入れていません。配達の住所が読み取れていないので、画像をもう一度選んでください。"
+        : "画像から住所を分離できませんでした。下の欄に読み取り結果を出したので、住所の行だけ残してルートを作ってください。");
       return;
     }
     mergeStops(parsed);
@@ -579,6 +589,7 @@ async function ingestFiles(files) {
 
 function mergeStops(parsed) {
   parsed.forEach((s) => {
+    if (FlexPlanner.isFlexStation(s.address)) return;
     const key = FlexPlanner.streetQuery(s.address);
     const prev = (s.id != null && stops.find((x) => x.id === s.id))
       || stops.find((x) => FlexPlanner.streetQuery(x.address) === key);
