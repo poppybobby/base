@@ -195,6 +195,8 @@
 
   function normalizeAddress(address) {
     return String(address || "")
+      .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+      .replace(/[－—―−]/g, "-")
       .replace(/ヶケ/g, "ヶ")
       .replace(/ケ丘/g, "ヶ丘")
       .replace(/[ \t　]+/g, " ")
@@ -240,7 +242,7 @@
   function parseFlexText(text) {
     const lines = String(text || "")
       .split(/\n/)
-      .map((line) => line.replace(/[|｜]/g, " ").replace(/[〇○●□]/g, " ").replace(/\s+/g, " ").trim())
+      .map((line) => normalizeAddress(line).replace(/[|｜]/g, " ").replace(/：/g, ":").replace(/[〇○●□]/g, " ").replace(/\s+/g, " ").trim())
       .filter(Boolean);
     const stops = [];
     let cur = null;

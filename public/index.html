@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>当日の最速ルート</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<script src="vendor/tesseract/tesseract.min.js"></script>
 <style>
   :root {
     --ink: #172028;
@@ -169,9 +169,9 @@
   </section>
 </main>
 <div class="bar" id="bar">
-  <button type="button" id="primary">リストの画像を選ぶ</button>
+  <button type="button" id="primary">画像を選んでルートを作る</button>
 </div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
 <script src="planner.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -246,61 +246,98 @@ function loadImage(file) {
   });
 }
 
-function canvasFrom(img, mode) {
+function asset(path) {
+  return new URL(path, location.href).href;
+}
+
+let sliceLabel = "";
+
+function paintSlice(img, sy, sh, scale, mode) {
   const canvas = document.createElement("canvas");
-  canvas.width = img.width * 2;
-  canvas.height = img.height * 2;
+  canvas.width = Math.max(1, Math.round(img.width * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  if (mode === "binary") {
+  ctx.drawImage(img, 0, sy, img.width, sh, 0, 0, canvas.width, canvas.height);
+  if (mode === "invert") {
     const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const d = image.data;
-    let dark = 0;
-    for (let i = 0; i < d.length; i += 16) {
-      const y = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
-      if (y < 140) dark++;
-    }
-    const inverted = dark > (d.length / 16) * 0.45;
     for (let i = 0; i < d.length; i += 4) {
-      let y = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
-      if (inverted) y = 255 - y;
-      const v = y < 150 ? 0 : 255;
-      d[i] = d[i + 1] = d[i + 2] = v;
+      d[i] = 255 - d[i];
+      d[i + 1] = 255 - d[i + 1];
+      d[i + 2] = 255 - d[i + 2];
     }
     ctx.putImageData(image, 0, 0);
   }
   return canvas;
 }
 
+function slicesOf(img, mode) {
+  const scale = img.width > 1400 ? 1400 / img.width : 1.6;
+  const sliceH = Math.max(800, Math.floor(4096 / scale));
+  const step = Math.max(1, sliceH - Math.round(160 / scale));
+  const out = [];
+  for (let y = 0; y < img.height; y += step) {
+    const h = Math.min(sliceH, img.height - y);
+    out.push(paintSlice(img, y, h, scale, mode));
+    if (y + h >= img.height) break;
+  }
+  return out;
+}
+
 async function recognize(canvas) {
   if (typeof Tesseract === "undefined") {
-    throw new Error("文字認識の読み込みに失敗しました。通信を確認して、ページを開き直してください。");
+    throw new Error("文字認識のファイルを読み込めませんでした。ページを開き直してください。");
   }
   if (!workerPromise) {
+    const base = asset("vendor/tesseract/");
     workerPromise = Tesseract.createWorker("jpn", 1, {
-      langPath: "https://tessdata.projectnaptha.com/4.0.0_fast",
+      workerPath: base + "worker.min.js",
+      corePath: base,
+      langPath: base,
+      workerBlobURL: false,
       gzip: true,
       logger: (m) => {
-        if (m.status === "recognizing text") setStatus("文字を読んでいます " + Math.round((m.progress || 0) * 100) + "%");
-        else setStatus("日本語の辞書を準備しています");
+        if (m.status === "recognizing text") {
+          setStatus(sliceLabel + " " + Math.round((m.progress || 0) * 100) + "%");
+        } else if (m.status === "loading language traineddata") {
+          setStatus("日本語の辞書を準備しています");
+        }
       }
+    }).catch((e) => {
+      workerPromise = null;
+      throw e;
     });
   }
   const worker = await workerPromise;
-  const result = await worker.recognize(canvas);
-  return result.data.text || "";
+  try {
+    const result = await worker.recognize(canvas);
+    return result.data.text || "";
+  } catch (e) {
+    try { await worker.terminate(); } catch (err) {}
+    workerPromise = null;
+    throw e;
+  }
+}
+
+async function readMode(img, mode) {
+  const parts = slicesOf(img, mode);
+  let text = "";
+  for (let i = 0; i < parts.length; i++) {
+    sliceLabel = "文字を読んでいます " + (i + 1) + "/" + parts.length;
+    setStatus(sliceLabel);
+    text += "\n" + await recognize(parts[i]);
+  }
+  return text;
 }
 
 async function readFile(file) {
   const img = await loadImage(file);
-  const plain = await recognize(canvasFrom(img, "plain"));
-  const plainStops = FlexPlanner.parseFlexText(plain);
-  if (plainStops.length) return plain;
-  const binary = await recognize(canvasFrom(img, "binary"));
-  const binaryStops = FlexPlanner.parseFlexText(binary);
-  return binaryStops.length >= plainStops.length ? binary : plain;
+  const plain = await readMode(img, "plain");
+  if (FlexPlanner.parseFlexText(plain).length) return plain;
+  const inverted = await readMode(img, "invert");
+  return FlexPlanner.parseFlexText(inverted).length ? inverted : plain;
 }
 
 function collectFromForm() {
@@ -344,7 +381,8 @@ function drawRows() {
     body.appendChild(tr);
   });
   $("review").hidden = stops.length === 0;
-  $("primary").textContent = stops.length ? "最速ルートを作る" : "リストの画像を選ぶ";
+  const primary = $("primary");
+  if (primary) primary.textContent = stops.length ? "ルートを作る" : "画像を選んでルートを作る";
 }
 
 function escapeHtml(s) {
@@ -398,28 +436,6 @@ function renderRoute(ordered) {
     ? '<div class="warn">終了時刻を超える件が ' + late.length + ' 件あります。締切が早い件から先に並べています。</div>'
     : "";
 
-  if (!map) {
-    map = L.map("map");
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: "&copy; OpenStreetMap"
-    }).addTo(map);
-    layer = L.layerGroup().addTo(map);
-  }
-  layer.clearLayers();
-  const latlngs = ordered.map((s) => [s.lat, s.lon]);
-  L.polyline(latlngs, { color: "#0d5c66", weight: 4 }).addTo(layer);
-  const names = FlexPlanner.parseAreaNames($("areas").value);
-  ordered.forEach((s, i) => {
-    const hot = names.some((n) => s.address.includes(n)) || s.inRestriction;
-    const marker = L.circleMarker([s.lat, s.lon], {
-      radius: 14, color: "#fff", weight: 2,
-      fillColor: hot ? "#8a4e10" : "#0d5c66", fillOpacity: 1
-    }).addTo(layer);
-    marker.bindTooltip(String(i + 1), { permanent: true, direction: "center", className: "pin-tip" });
-    marker.bindPopup("<b>" + (i + 1) + "番目</b><br>" + escapeHtml(s.address) + "<br>到着 " + FlexPlanner.formatMin(s.arriveMin));
-  });
-  if (latlngs.length) map.fitBounds(latlngs, { padding: [28, 28] });
-
   const legs = FlexPlanner.chunkLegs(ordered, FlexPlanner.LEG_SIZE);
   const legsEl = $("legs");
   legsEl.innerHTML = "";
@@ -458,7 +474,37 @@ function renderRoute(ordered) {
       '</b><div class="muted">' + flags + ' · <a href="' + one + '" target="_blank" rel="noopener">この件だけ</a></div></div>';
     list.appendChild(li);
   });
+  try {
+    drawMap(ordered);
+  } catch (e) {
+    setStatus("地図は出せませんでしたが、下のボタンでナビは始まります。");
+  }
   $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function drawMap(ordered) {
+  if (typeof L === "undefined") throw new Error("map");
+  if (!map) {
+    map = L.map("map");
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+  }
+  layer.clearLayers();
+  const latlngs = ordered.map((s) => [s.lat, s.lon]);
+  L.polyline(latlngs, { color: "#0d5c66", weight: 4 }).addTo(layer);
+  const names = FlexPlanner.parseAreaNames($("areas").value);
+  ordered.forEach((s, i) => {
+    const hot = names.some((n) => s.address.includes(n)) || s.inRestriction;
+    const marker = L.circleMarker([s.lat, s.lon], {
+      radius: 14, color: "#fff", weight: 2,
+      fillColor: hot ? "#8a4e10" : "#0d5c66", fillOpacity: 1
+    }).addTo(layer);
+    marker.bindTooltip(String(i + 1), { permanent: true, direction: "center", className: "pin-tip" });
+    marker.bindPopup("<b>" + (i + 1) + "番目</b><br>" + escapeHtml(s.address) + "<br>到着 " + FlexPlanner.formatMin(s.arriveMin));
+  });
+  if (latlngs.length) map.fitBounds(latlngs, { padding: [28, 28] });
 }
 
 async function plan() {
@@ -501,6 +547,8 @@ async function plan() {
 }
 
 async function ingestFiles(files) {
+  const primary = $("primary");
+  if (primary) primary.disabled = true;
   try {
     let text = "";
     for (const file of files) {
@@ -519,15 +567,29 @@ async function ingestFiles(files) {
     await plan();
   } catch (e) {
     setStatus(e && e.message ? e.message : "画像の読み取りに失敗しました。");
+  } finally {
+    fileInput.value = "";
+    const button = $("primary");
+    if (button) button.disabled = false;
   }
 }
 
 function mergeStops(parsed) {
   parsed.forEach((s) => {
-    if (s.id == null) { stops.push(s); return; }
-    const prev = stops.find((x) => x.id === s.id);
+    const key = FlexPlanner.streetQuery(s.address);
+    const prev = (s.id != null && stops.find((x) => x.id === s.id))
+      || stops.find((x) => FlexPlanner.streetQuery(x.address) === key);
     if (!prev) stops.push(s);
-    else if ((s.address || "").length > (prev.address || "").length) prev.address = s.address;
+    else {
+      if ((s.address || "").length > (prev.address || "").length) prev.address = s.address;
+      if (s.id != null) prev.id = s.id;
+      if (s.current) prev.current = true;
+      if (s.windowEnd && !prev.windowEnd) {
+        prev.windowEnd = s.windowEnd;
+        prev.windowEndMin = s.windowEndMin;
+        prev.windowStart = s.windowStart;
+      }
+    }
   });
 }
 
