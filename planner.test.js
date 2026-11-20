@@ -107,7 +107,11 @@ assert.ok(p.streetQuery(wide[0].address).includes("天神山4-117"), p.streetQue
 const withStation = p.parseFlexText("スケジュール済み 04:00 - 07:59\n柏屋町江辻84C\nスケジュール済み 04:00 - 07:59\n春日市天神山 4-117\n");
 assert.deepStrictEqual(withStation.map((s) => s.address), ["春日市天神山 4-117"]);
 assert.strictEqual(p.isFlexStation("柏屋町江辻84C"), true);
-assert.strictEqual(p.isFlexStation("春日市柏屋町江辻1丁目2-3"), false);
+assert.strictEqual(p.isFlexStation("柏屋町江辻84-1"), true);
+assert.strictEqual(p.isFlexStation("春日市柏屋町江辻1丁目2-3"), true);
+const mixed = p.parseFlexText("スケジュール済み 04:00 - 07:59\n春日市天神山4-117 柏屋町江辻84C\n");
+assert.strictEqual(mixed.length, 1);
+assert.strictEqual(mixed[0].address.indexOf("江辻"), -1);
 assert.ok(parsed[1].address.includes("2-78"));
 assert.strictEqual(parsed[1].address.includes("ヶ丘"), true);
 assert.ok(parsed[2].address.includes("94-2"));

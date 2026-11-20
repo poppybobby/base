@@ -239,12 +239,21 @@
     return out;
   }
 
-  // 江辻は拠点の名前。丁目や「1-2」の番地が無い行は配達先にしない。
+  function stripStation(address) {
+    return String(address || "")
+      .split(/\s+/)
+      .filter((part) => part && part.indexOf("江辻") === -1 && !/ステーション|ピックアップ|受け取り場所/.test(part))
+      .join(" ")
+      .trim();
+  }
+
+  // 江辻は拠点の名前。番地が付いていても配達先にしない。
   function isFlexStation(address) {
-    const s = normalizeAddress(address).replace(/\s/g, "");
+    const s = normalizeAddress(address);
     if (!s) return false;
-    if (/ステーション|ピックアップ|受け取り場所/.test(s)) return true;
-    return /江辻/.test(s) && !/丁目/.test(s) && !/\d+-\d+/.test(s);
+    if (s.indexOf("江辻") !== -1 && !stripStation(s)) return true;
+    if (/ステーション|ピックアップ|受け取り場所/.test(s) && !stripStation(s)) return true;
+    return false;
   }
 
   function parseFlexText(text) {
@@ -308,10 +317,10 @@
       if (prev != null && next && next.id === prev + 2) stops[i].id = prev + 1;
     }
     return stops.map((s) => Object.assign({}, s, {
-      address: normalizeAddress(s.address),
+      address: stripStation(normalizeAddress(s.address)),
       windowEndMin: clockToMin(s.windowEnd),
       windowStartMin: clockToMin(s.windowStart),
-    })).filter((s) => !isFlexStation(s.address));
+    })).filter((s) => s.address && !isFlexStation(s.address));
   }
 
   function bearing(a, b) {
@@ -498,5 +507,6 @@
     geocodeCandidates,
     looksLikeAddress,
     isFlexStation,
+    stripStation,
   };
 });

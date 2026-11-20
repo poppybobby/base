@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>当日の最速ルート</title>
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=4">
-<script src="vendor/tesseract/tesseract.min.js?v=4"></script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=5">
+<script src="vendor/tesseract/tesseract.min.js?v=5"></script>
 <style>
   :root {
     --ink: #172028;
@@ -110,7 +110,7 @@
 <header>
   <div class="kicker">AMAZON FLEX · 毎日どの市でも</div>
   <h1>当日の最速ルート</h1>
-  <p class="muted" id="build">画面の版 4。江辻のステーションは配達先から外れます。</p>
+  <p class="muted" id="build">画面の版 5。江辻と書いてある行は、番地があっても配達先から外れます。</p>
   <p class="muted">出発と終了、渋滞エリア、配達リストの長尺画像。番地から全国の住所を引き、その日の条件で運転時間が短い順を作ります。</p>
 </header>
 <main>
@@ -173,8 +173,8 @@
 <div class="bar" id="bar">
   <button type="button" id="primary">画像を選んでルートを作る</button>
 </div>
-<script src="vendor/leaflet/leaflet.js?v=4"></script>
-<script src="planner.js?v=4"></script>
+<script src="vendor/leaflet/leaflet.js?v=5"></script>
+<script src="planner.js?v=5"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -524,8 +524,8 @@ async function plan() {
   saveForm();
   try {
   const formStops = collectFromForm();
-  const droppedStation = formStops.some((s) => FlexPlanner.isFlexStation(s.address));
-  stops = formStops.filter((s) => !FlexPlanner.isFlexStation(s.address));
+  const droppedStation = formStops.some((s) => String(s.address).indexOf("江辻") !== -1 || FlexPlanner.isFlexStation(s.address));
+  stops = formStops.map((s) => Object.assign({}, s, { address: FlexPlanner.stripStation(s.address) })).filter((s) => s.address && s.address.indexOf("江辻") === -1);
   drawRows();
   await locateAll();
   const located = stops.filter((s) => s.lat != null);
