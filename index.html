@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>今日の配達コース 47件</title>
+<title>今日の配達ルート</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root {
@@ -13,71 +13,49 @@
     --card: #fffdf8;
     --line: #e4dccb;
     --teal: #0c5c66;
-    --teal-2: #14808c;
     --green: #1d7a45;
-    --amber: #9a5b12;
-    --red: #9c2f2f;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
+  html, body { margin: 0; }
   body {
     font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
     color: var(--ink);
     background: var(--paper);
     line-height: 1.5;
+    padding-bottom: 96px;
   }
-  header {
-    padding: 22px 20px 8px;
-    max-width: 880px;
-    margin: 0 auto;
+  header, main { max-width: 720px; margin: 0 auto; padding: 18px 16px 0; }
+  .kicker { letter-spacing: 0.12em; font-size: 12px; color: var(--teal); font-weight: 700; }
+  h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 8px; }
+  p { margin: 0 0 10px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  label { display: block; font-weight: 700; font-size: 14px; margin: 14px 0 6px; }
+  textarea, input[type="time"] {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font: inherit;
+    background: var(--card);
   }
-  .kicker {
-    letter-spacing: 0.14em;
-    font-size: 12px;
-    color: var(--teal);
+  textarea { min-height: 72px; resize: vertical; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 14px; }
+  button, .ghost {
+    font: inherit;
+    border-radius: 999px;
+    border: 0;
+    padding: 10px 14px;
     font-weight: 700;
   }
-  h1 {
-    font-size: 28px;
-    line-height: 1.25;
-    margin: 4px 0 6px;
-  }
-  .lead { margin: 0; color: var(--muted); font-size: 15px; }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 8px 16px 48px; }
-  .times {
-    display: grid;
-    grid-template-columns: 1.3fr 1fr 1fr;
-    gap: 10px;
-    margin: 16px 0;
-  }
-  .time {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 12px 14px;
-  }
-  .time b { display: block; font-size: 26px; letter-spacing: -0.03em; }
-  .time span { color: var(--muted); font-size: 12px; }
-  .time.ok { background: #e7f5ee; border-color: #b7e0c8; }
-  .time.ok b { color: var(--green); }
-  .time.warn b { color: var(--amber); }
+  button { background: var(--teal); color: white; }
+  .ghost { background: transparent; color: var(--teal); border: 1px solid var(--teal); }
   #map {
-    height: 68vh;
-    min-height: 420px;
+    height: 46vh;
+    min-height: 280px;
     border-radius: 16px;
     border: 1px solid var(--line);
-    overflow: hidden;
+    margin: 8px 0;
   }
-  .legend {
-    display: flex;
-    gap: 14px;
-    flex-wrap: wrap;
-    font-size: 12px;
-    color: var(--muted);
-    margin: 8px 2px 0;
-  }
-  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-  h2 { font-size: 18px; margin: 28px 0 8px; }
   .note {
     background: #fff7e8;
     border: 1px solid #f0ddb0;
@@ -85,216 +63,251 @@
     padding: 12px 14px;
     font-size: 14px;
   }
-  .block {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    margin: 12px 0;
-    overflow: hidden;
-  }
-  .block h3 {
-    margin: 0;
-    padding: 12px 14px 0;
-    font-size: 16px;
-  }
-  .block .where {
-    margin: 2px 14px 8px;
-    color: var(--muted);
-    font-size: 13px;
-  }
-  ol.stops { list-style: none; margin: 0; padding: 0; }
-  ol.stops li {
+  ol { list-style: none; margin: 0; padding: 0; }
+  li {
     display: flex;
     gap: 10px;
-    align-items: center;
-    padding: 8px 14px;
+    align-items: flex-start;
+    padding: 10px 0;
     border-top: 1px solid var(--line);
   }
   .seq {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--teal);
-    color: white;
-    display: grid;
-    place-items: center;
-    font-size: 13px;
-    font-weight: 700;
-    flex: none;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--teal); color: white;
+    display: grid; place-items: center;
+    font-size: 13px; font-weight: 700; flex: none;
   }
-  li.start .seq { background: var(--green); }
-  li.end .seq { background: #16324f; }
-  .pinno { font-weight: 800; font-size: 18px; min-width: 52px; }
-  .pinno small { display: block; font-weight: 600; color: var(--muted); font-size: 11px; }
-  li label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-left: auto; }
-  li.done { opacity: 0.45; }
-  .maps {
-    display: inline-block;
-    margin: 4px 14px 12px;
-    color: var(--teal);
-    font-weight: 700;
-    font-size: 14px;
+  li.prio .seq { background: #9a5b12; }
+  .addr { font-size: 14px; }
+  .addr b { display: block; font-size: 15px; }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: #fffdf8; border-top: 1px solid var(--line);
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    background: var(--card);
-    border-radius: 12px;
-    overflow: hidden;
-    font-size: 14px;
+  .bar a {
+    display: block; text-align: center; text-decoration: none;
+    background: var(--green); color: white;
+    font-weight: 800; font-size: 18px;
+    border-radius: 14px; padding: 14px 12px;
   }
-  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-  th { color: var(--muted); font-weight: 600; font-size: 12px; }
-  footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
-  .leaflet-container { font-family: inherit; background: #efe8d8; }
-  @media (max-width: 640px) {
-    .times { grid-template-columns: 1fr; }
-    h1 { font-size: 24px; }
-    #map { height: 72vh; }
+  .legs { display: flex; gap: 8px; overflow: auto; padding-bottom: 8px; }
+  .legs a {
+    flex: none; text-decoration: none; color: var(--teal);
+    border: 1px solid var(--teal); border-radius: 999px;
+    padding: 6px 10px; font-size: 13px; font-weight: 700;
   }
+  .pin-tip { background: transparent; border: 0; box-shadow: none; color: #fff; font-weight: 800; font-size: 12px; }
+  .pin-tip:before { display: none; }
 </style>
 </head>
 <body>
 <header>
-  <div class="kicker">AMAZON FLEX · 博多区南端〜南区横手</div>
-  <h1>47件を、北から南へ一回で掃く</h1>
-  <p class="lead">緑の1がいまの目的地。そこから東へ抜け、西側をまとめて南下し、横手中の南・外環の手前で終わる。</p>
+  <div class="kicker">AMAZON FLEX</div>
+  <h1>左回りで、先に抜けるエリアから</h1>
+  <p class="muted">日本は左側通行なので、区画は左折が続く反時計回りで回します。渋滞しそうな地名を入れると、その範囲を先にまとめて抜けます。</p>
 </header>
-<div class="wrap">
-  <section class="times" id="times"></section>
-  <div id="map"></div>
-  <div class="legend">
-    <span><i class="dot" style="background:#1d7a45"></i>開始 #1</span>
-    <span><i class="dot" style="background:#0c5c66"></i>途中</span>
-    <span><i class="dot" style="background:#16324f"></i>終了 #31（外環の北側）</span>
+<main>
+  <label for="depart">出発時刻</label>
+  <input id="depart" type="time" value="05:00">
+  <label for="areas">今の時間、先に抜ける地名</label>
+  <textarea id="areas" placeholder="赤坂、警固"></textarea>
+  <div class="row">
+    <button type="button" id="use-here">いまの位置から始める</button>
+    <button type="button" class="ghost" id="clear-here">位置を消す</button>
   </div>
-
-  <h2>2時間半に収まる条件</h2>
-  <table>
-    <thead><tr><th>玄関での時間</th><th>47件の作業</th><th>運転と合わせた合計</th><th>2時間半</th></tr></thead>
-    <tbody id="budget"></tbody>
-  </table>
-  <p class="lead" style="margin-top:8px">置き配や戸建ての玄関先なら1.3分で回せる。オートロックの集合が10件を超えて1件3分近くになると、2時間半を超える。</p>
-
-  <h2>走り方</h2>
-  <div class="note">
-    番号が読めたのは30件。残りの17件（4, 5, 11, 17, 18, 19, 21, 26, 27, 28, 29, 35, 36, 38, 39, 40, 44）はピンが重なっていて、この順路の塊の中にある。塊に着いたらFlexの地図を拡大し、その場のピンを全部終わらせてから次の塊へ。戻らない。
-    南西（25と30のまわり）には 26・27・28・29 の一部が見えている。
+  <p class="muted" id="here-label">開始位置は未設定です。ナビ開始時は、Googleマップが今いる場所から案内します。</p>
+  <div id="waiting" class="note">
+    本日のブロックが始まると、Flexの一覧に全件が出ます。番地まで写った長尺画像をチャットに貼ってください。集合住宅の名前が切れても、番地と部屋番号が残っていれば足ります。画像が入り次第、7:00–9:00の規制と到着時刻を照らして順を作り、下のボタンからGoogleマップのナビが始まります。
   </div>
-  <div id="blocks"></div>
-
-  <footer>
-    位置は配達プランマップの画面からピンを読み、福岡市立横手中学校と福岡外環状道路に合わせてあります。ドアの位置はおおよそ100m以内のずれがあり得ます。運転時間は道路距離19.4kmを普通車の経路で計算した42分です。重なっている17件の寄り道を足して、運転はおよそ45〜50分見てください。
-  </footer>
+  <div id="ready" hidden>
+    <p class="muted" id="summary"></p>
+    <div id="map"></div>
+    <div class="legs" id="legs"></div>
+    <ol id="list"></ol>
+    <p class="note">福岡で多い朝の一方通行・通学規制は7:00–9:00です。締切が9時より後の件は、到着がその時間に入るなら9時以降に回します。締切が9時前の件は規制の前に終える順で先に行きます。停留のあいだの道はGoogleマップが選ぶので、その区間だけ右折になることがあります。現地の標識が優先です。</p>
+  </div>
+</main>
+<div class="bar" id="bar" hidden>
+  <a id="go" href="#" target="_blank" rel="noopener">Googleマップでナビ開始</a>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="planner.js"></script>
+<script src="stops.js"></script>
 <script>
-const DATA = {"drive_km":19.38,"drive_min":42.0,"order":[{"n":1,"lat":33.569483,"lon":130.438816},{"n":2,"lat":33.567149,"lon":130.4357},{"n":3,"lat":33.564913,"lon":130.434477},{"n":42,"lat":33.563434,"lon":130.439566},{"n":43,"lat":33.563434,"lon":130.442603},{"n":46,"lat":33.561329,"lon":130.446864},{"n":47,"lat":33.560639,"lon":130.451598},{"n":45,"lat":33.556726,"lon":130.446982},{"n":37,"lat":33.556332,"lon":130.440433},{"n":41,"lat":33.560014,"lon":130.439053},{"n":7,"lat":33.559883,"lon":130.436173},{"n":8,"lat":33.557713,"lon":130.435778},{"n":6,"lat":33.561132,"lon":130.433845},{"n":13,"lat":33.56396,"lon":130.430058},{"n":14,"lat":33.565209,"lon":130.425364},{"n":16,"lat":33.562086,"lon":130.425167},{"n":15,"lat":33.561757,"lon":130.421932},{"n":20,"lat":33.561001,"lon":130.42852},{"n":22,"lat":33.559718,"lon":130.42781},{"n":23,"lat":33.557088,"lon":130.428323},{"n":24,"lat":33.554589,"lon":130.430256},{"n":25,"lat":33.553636,"lon":130.426587},{"n":30,"lat":33.550743,"lon":130.430335},{"n":12,"lat":33.553833,"lon":130.434832},{"n":9,"lat":33.554787,"lon":130.437593},{"n":10,"lat":33.553176,"lon":130.438974},{"n":34,"lat":33.549066,"lon":130.439132},{"n":33,"lat":33.550118,"lon":130.435976},{"n":32,"lat":33.547126,"lon":130.434674},{"n":31,"lat":33.545055,"lon":130.435542}],"line":[[130.438619,33.569438],[130.438638,33.569381],[130.438674,33.569301],[130.438589,33.569252],[130.438576,33.569244],[130.438176,33.568985],[130.438211,33.568689],[130.438236,33.568512],[130.438164,33.568363],[130.438156,33.568264],[130.437831,33.568155],[130.437143,33.568064],[130.436772,33.568018],[130.43638,33.567969],[130.435844,33.567898],[130.436007,33.567295],[130.436025,33.567257],[130.436173,33.566948],[130.436261,33.566813],[130.436282,33.566787],[130.436331,33.566733],[130.436146,33.566553],[130.436036,33.566486],[130.435817,33.566492],[130.435747,33.566495],[130.434985,33.566235],[130.434952,33.56622],[130.434887,33.566189],[130.434749,33.566278],[130.434638,33.566357],[130.434156,33.566728],[130.433976,33.566881],[130.433931,33.566837],[130.433821,33.566736],[130.433791,33.566709],[130.433591,33.566508],[130.433819,33.566125],[130.434167,33.565424],[130.434202,33.565339],[130.434226,33.565299],[130.434226,33.565299],[130.433917,33.565191],[130.433924,33.56541],[130.433849,33.565629],[130.433717,33.565879],[130.433594,33.566116],[130.43349,33.566308],[130.433438,33.566402],[130.433591,33.566508],[130.433791,33.566709],[130.433821,33.566736],[130.433931,33.566837],[130.433976,33.566881],[130.434156,33.566728],[130.434638,33.566357],[130.434749,33.566278],[130.434887,33.566189],[130.434968,33.566136],[130.436954,33.564824],[130.43794,33.564176],[130.438105,33.564063],[130.438504,33.563825],[130.43897,33.563522],[130.439375,33.563241],[130.43962,33.56307],[130.439653,33.563104],[130.439697,33.563146],[130.439597,33.563346],[130.439597,33.563346],[130.439697,33.563146],[130.439653,33.563104],[130.43962,33.56307],[130.439709,33.563009],[130.439879,33.562894],[130.4401,33.56297],[130.440487,33.56311],[130.441401,33.56343],[130.441766,33.563497],[130.441836,33.56351],[130.44192,33.563539],[130.442008,33.563569],[130.442306,33.563687],[130.442491,33.563761],[130.442597,33.563803],[130.442671,33.563832],[130.442738,33.563711],[130.44293,33.56336],[130.442767,33.563294],[130.442677,33.563462],[130.442599,33.563606],[130.442654,33.563696],[130.44264,33.563722],[130.442597,33.563803],[130.442671,33.563832],[130.443107,33.564014],[130.443233,33.564062],[130.443497,33.564161],[130.443755,33.56426],[130.443891,33.564313],[130.444036,33.564191],[130.444158,33.564087],[130.444309,33.563938],[130.444677,33.563606],[130.444935,33.563373],[130.445067,33.563266],[130.446131,33.562298],[130.44653,33.561924],[130.446826,33.56165],[130.447121,33.561397],[130.447055,33.56135],[130.446933,33.561262],[130.446704,33.561099],[130.447966,33.559942],[130.448326,33.56019],[130.448403,33.560243],[130.448477,33.560298],[130.448763,33.560508],[130.448886,33.560598],[130.449211,33.560812],[130.449396,33.560917],[130.449892,33.561241],[130.450429,33.561603],[130.45065,33.56175],[130.450978,33.561982],[130.452078,33.560821],[130.451655,33.560572],[130.451477,33.560467],[130.451228,33.560342],[130.450858,33.560151],[130.450499,33.559955],[130.450365,33.560076],[130.449396,33.560917],[130.449211,33.560812],[130.448886,33.560598],[130.448763,33.560508],[130.448477,33.560298],[130.448403,33.560243],[130.448326,33.56019],[130.447966,33.559942],[130.447388,33.559536],[130.447181,33.559388],[130.446882,33.55917],[130.447034,33.558707],[130.447196,33.558279],[130.447265,33.558041],[130.447332,33.557853],[130.447495,33.557366],[130.447515,33.557308],[130.447577,33.557155],[130.447633,33.55699],[130.447803,33.556514],[130.447817,33.556447],[130.447629,33.556367],[130.447306,33.556444],[130.447149,33.556525],[130.446984,33.556618],[130.446921,33.556656],[130.446652,33.55682],[130.446522,33.556947],[130.446402,33.557127],[130.446371,33.55723],[130.446325,33.557273],[130.446097,33.557478],[130.446017,33.557498],[130.445931,33.557521],[130.445875,33.557621],[130.445834,33.557793],[130.445687,33.558006],[130.445634,33.557952],[130.44541,33.557728],[130.445259,33.557576],[130.445208,33.557529],[130.445184,33.557503],[130.445157,33.557472],[130.445055,33.557361],[130.444999,33.557251],[130.444966,33.55715],[130.444966,33.557007],[130.445014,33.556732],[130.44504,33.556575],[130.445052,33.556514],[130.445087,33.556265],[130.445105,33.555884],[130.445104,33.555805],[130.445095,33.555719],[130.445063,33.555498],[130.445042,33.555328],[130.444919,33.55452],[130.444885,33.554283],[130.444867,33.554202],[130.44484,33.554139],[130.444713,33.55395],[130.44443,33.553847],[130.444387,33.553819],[130.444301,33.55377],[130.444136,33.553861],[130.443762,33.55407],[130.443658,33.554126],[130.443129,33.554415],[130.442728,33.554643],[130.442409,33.554821],[130.441808,33.555186],[130.441679,33.555277],[130.44134,33.555548],[130.441085,33.555768],[130.440756,33.55611],[130.440637,33.556235],[130.440502,33.556378],[130.440414,33.556471],[130.440338,33.556548],[130.439658,33.557255],[130.439741,33.557293],[130.440639,33.557724],[130.44043,33.558506],[130.440341,33.558772],[130.440191,33.559099],[130.440077,33.559203],[130.439848,33.559414],[130.439653,33.559601],[130.439304,33.559936],[130.439154,33.560085],[130.438848,33.560389],[130.438838,33.560437],[130.438828,33.560481],[130.438258,33.560704],[130.438183,33.560666],[130.438044,33.560627],[130.438019,33.560621],[130.437931,33.560598],[130.437266,33.560427],[130.436843,33.560318],[130.436742,33.560292],[130.43674,33.56016],[130.436764,33.56002],[130.43684,33.559586],[130.436465,33.559489],[130.436288,33.559443],[130.436188,33.559885],[130.436134,33.560125],[130.436287,33.560175],[130.436465,33.559489],[130.436575,33.558956],[130.436699,33.55819],[130.436732,33.557906],[130.436759,33.557579],[130.436794,33.557178],[130.436815,33.556864],[130.436823,33.556584],[130.436646,33.556611],[130.436629,33.557112],[130.436563,33.557119],[130.436333,33.557143],[130.435587,33.55722],[130.43564,33.557583],[130.435692,33.557728],[130.435773,33.557739],[130.435815,33.557745],[130.435708,33.557938],[130.43561,33.558206],[130.435572,33.55836],[130.435539,33.558507],[130.435466,33.558638],[130.435362,33.558749],[130.435213,33.558956],[130.435162,33.559136],[130.435157,33.559201],[130.435102,33.559648],[130.435026,33.55984],[130.434799,33.560093],[130.434596,33.560345],[130.434566,33.560428],[130.434298,33.56091],[130.43427,33.56103],[130.434249,33.561173],[130.434184,33.561624],[130.434045,33.562092],[130.43404,33.562128],[130.434021,33.562247],[130.433925,33.562294],[130.432717,33.562951],[130.432626,33.562999],[130.431743,33.563468],[130.430413,33.564175],[130.430191,33.563888],[130.430101,33.563772],[130.430003,33.563832],[130.429618,33.563969],[130.429588,33.563971],[130.429553,33.563974],[130.429154,33.564202],[130.429026,33.564296],[130.428473,33.564785],[130.428098,33.565143],[130.427798,33.565464],[130.427774,33.565516],[130.427482,33.565844],[130.427425,33.565906],[130.427364,33.565978],[130.427043,33.566336],[130.426083,33.56575],[130.425305,33.565276],[130.425206,33.565215],[130.424884,33.565017],[130.424276,33.564632],[130.423744,33.564315],[130.423152,33.563941],[130.423403,33.563713],[130.423444,33.563675],[130.423584,33.563529],[130.423724,33.563406],[130.423776,33.563354],[130.424703,33.562496],[130.42512,33.562078],[130.425138,33.562063],[130.425157,33.562046],[130.425214,33.561991],[130.425108,33.561916],[130.425039,33.561863],[130.424907,33.561763],[130.424634,33.561554],[130.424597,33.561526],[130.424552,33.561492],[130.42367,33.560832],[130.423563,33.560752],[130.422945,33.561091],[130.422345,33.561456],[130.42192,33.561745],[130.421652,33.561928],[130.421755,33.562024],[130.422014,33.562264],[130.422722,33.562949],[130.422829,33.563034],[130.42336,33.563377],[130.423485,33.56346],[130.423584,33.563529],[130.423724,33.563406],[130.423776,33.563354],[130.424703,33.562496],[130.42512,33.562078],[130.425157,33.562046],[130.425214,33.561991],[130.425303,33.561908],[130.425831,33.561438],[130.426069,33.561266],[130.426213,33.561158],[130.426318,33.561086],[130.426419,33.561017],[130.426707,33.560817],[130.427181,33.560492],[130.427469,33.560292],[130.427521,33.560255],[130.427642,33.560171],[130.427727,33.560307],[130.427983,33.560702],[130.428369,33.560394],[130.428711,33.560918],[130.428711,33.560918],[130.428969,33.560909],[130.428888,33.560029],[130.428871,33.559993],[130.429113,33.5598],[130.429051,33.559735],[130.428801,33.559469],[130.428753,33.559416],[130.428703,33.559297],[130.428568,33.559387],[130.428317,33.559558],[130.427923,33.559831],[130.427788,33.559924],[130.42758,33.560071],[130.427642,33.560171],[130.427877,33.560011],[130.427949,33.559961],[130.428657,33.559481],[130.428753,33.559416],[130.428703,33.559297],[130.4287,33.559179],[130.4287,33.558943],[130.428689,33.558635],[130.428635,33.558093],[130.42863,33.558025],[130.428628,33.557996],[130.428624,33.557938],[130.428585,33.55739],[130.428575,33.55725],[130.42857,33.557178],[130.428549,33.556889],[130.428521,33.556571],[130.428423,33.556582],[130.427747,33.556658],[130.427717,33.556661],[130.427747,33.557035],[130.427784,33.55701],[130.428287,33.55693],[130.428458,33.556903],[130.428549,33.556889],[130.428521,33.556571],[130.42851,33.556459],[130.428442,33.555788],[130.428437,33.555487],[130.428432,33.555087],[130.428422,33.55483],[130.428418,33.55466],[130.428413,33.554408],[130.428496,33.554406],[130.428542,33.554369],[130.4287,33.554179],[130.428775,33.554164],[130.428842,33.554171],[130.428971,33.554241],[130.429093,33.554347],[130.42911,33.554388],[130.429096,33.554414],[130.429784,33.554617],[130.429859,33.554647],[130.429898,33.55461],[130.430046,33.554436],[130.430148,33.554396],[130.430346,33.554319],[130.431093,33.553962],[130.431726,33.553463],[130.431628,33.553294],[130.431594,33.553306],[130.4313,33.553466],[130.431149,33.553517],[130.430978,33.553587],[130.430886,33.553664],[130.43079,33.553795],[130.430714,33.553846],[130.430528,33.5539],[130.430125,33.554036],[130.429717,33.554117],[130.428971,33.554241],[130.428842,33.554171],[130.428775,33.554164],[130.4287,33.554179],[130.428542,33.554369],[130.428496,33.554406],[130.428413,33.554408],[130.428418,33.55466],[130.428422,33.55483],[130.428156,33.554823],[130.428048,33.554824],[130.427794,33.554868],[130.427321,33.55482],[130.42685,33.554593],[130.426641,33.554446],[130.426929,33.554114],[130.427075,33.553988],[130.426867,33.553851],[130.426689,33.553748],[130.426654,33.55374],[130.426606,33.553711],[130.426591,33.553694],[130.426572,33.553657],[130.426565,33.553646],[130.426553,33.553627],[130.42643,33.553555],[130.426621,33.553357],[130.426825,33.553152],[130.426994,33.553002],[130.427345,33.552718],[130.427604,33.552549],[130.427884,33.552385],[130.428151,33.552248],[130.428383,33.552131],[130.428478,33.552087],[130.429706,33.551539],[130.430096,33.551364],[130.430514,33.551178],[130.430755,33.551064],[130.430575,33.550667],[130.430529,33.550565],[130.430359,33.550422],[130.430141,33.55041],[130.429939,33.550399],[130.430141,33.55041],[130.430359,33.550422],[130.430529,33.550565],[130.430755,33.551064],[130.431768,33.550606],[130.431997,33.550503],[130.432652,33.550202],[130.432702,33.550183],[130.433469,33.549834],[130.433502,33.549819],[130.43403,33.549588],[130.434277,33.549467],[130.434793,33.549202],[130.435137,33.549486],[130.435252,33.549569],[130.435285,33.549673],[130.435374,33.549966],[130.435477,33.550345],[130.435521,33.550477],[130.435613,33.550799],[130.435666,33.550986],[130.435744,33.551266],[130.435875,33.551709],[130.436006,33.55218],[130.436146,33.552704],[130.436225,33.55297],[130.436241,33.553042],[130.43625,33.553101],[130.435961,33.553309],[130.435706,33.553455],[130.435459,33.553578],[130.43491,33.553813],[130.434894,33.553821],[130.434839,33.553844],[130.434114,33.554147],[130.434042,33.55418],[130.433442,33.554434],[130.433291,33.554498],[130.433353,33.554608],[130.433504,33.554543],[130.433981,33.554337],[130.434107,33.554278],[130.434958,33.553929],[130.435227,33.553817],[130.435442,33.553726],[130.43555,33.553672],[130.43562,33.553637],[130.435838,33.553524],[130.436096,33.553373],[130.436278,33.553248],[130.4363,33.55335],[130.436331,33.553497],[130.436402,33.553882],[130.436493,33.554439],[130.436535,33.554782],[130.436594,33.555395],[130.436624,33.555736],[130.436637,33.555948],[130.436641,33.556096],[130.436818,33.556088],[130.436815,33.55592],[130.436916,33.555742],[130.436905,33.555549],[130.436879,33.555048],[130.436827,33.554611],[130.437341,33.554448],[130.437393,33.554807],[130.437421,33.555001],[130.43748,33.555497],[130.438296,33.55543],[130.438354,33.555423],[130.438844,33.555365],[130.438906,33.555359],[130.438982,33.555361],[130.439526,33.555378],[130.439558,33.555247],[130.43958,33.555159],[130.439697,33.554684],[130.439755,33.554445],[130.439829,33.554166],[130.439848,33.554101],[130.439854,33.554037],[130.43986,33.55392],[130.439822,33.553753],[130.439778,33.55363],[130.439762,33.553557],[130.439756,33.553526],[130.439721,33.553368],[130.439672,33.5532],[130.439287,33.553244],[130.439188,33.553247],[130.439187,33.553175],[130.439185,33.552901],[130.439169,33.552782],[130.439196,33.55263],[130.439216,33.552455],[130.439143,33.5524],[130.439083,33.552408],[130.43891,33.552465],[130.438886,33.552477],[130.438793,33.5525],[130.438195,33.552544],[130.43763,33.552575],[130.437523,33.552214],[130.437737,33.552016],[130.4378,33.551955],[130.438179,33.551639],[130.438261,33.551568],[130.438337,33.551503],[130.438716,33.551165],[130.43881,33.551081],[130.43894,33.550984],[130.439211,33.550782],[130.440761,33.549577],[130.441168,33.549261],[130.441617,33.548922],[130.441725,33.548841],[130.441868,33.548737],[130.441818,33.548625],[130.441781,33.548593],[130.441144,33.548029],[130.440819,33.548332],[130.440346,33.548788],[130.439534,33.549572],[130.439464,33.549496],[130.439314,33.549239],[130.439236,33.549103],[130.439174,33.549038],[130.43908,33.548939],[130.438872,33.548666],[130.438854,33.548683],[130.438807,33.548729],[130.438367,33.54915],[130.4383,33.549156],[130.437915,33.548997],[130.436908,33.549877],[130.43619,33.550489],[130.435803,33.550821],[130.435692,33.550416],[130.435624,33.550192],[130.435516,33.549832],[130.43537,33.54931],[130.43525,33.548899],[130.43519,33.548682],[130.435096,33.548388],[130.43499,33.547971],[130.434956,33.547855],[130.434888,33.547609],[130.434811,33.547331],[130.434754,33.547112],[130.434735,33.547037],[130.434665,33.546766],[130.434519,33.54621],[130.434438,33.545888],[130.434695,33.545658],[130.435015,33.545354],[130.435479,33.544934],[130.43559,33.544995]]};
-const BLOCKS = [
-  { title: "1. 北を片付ける", where: "国道3号のすぐ南。いま向かっている1から、隣の2・3まで。", ids: [1,2,3], sweep: "この周辺に重なりがあれば、東へ出る前に落とす。" },
-  { title: "2. 東へ抜ける", where: "那珂、板付、諸岡。3号の南側を東へ一直線。", ids: [42,43,46,47,45], sweep: "" },
-  { title: "3. 中央を西へ", where: "高木の北側。東の端から西へ戻りながら、7の南にある8も拾う。", ids: [37,41,7,8,6], sweep: "この帯はピンが一番厚い。17, 18, 19, 35, 36, 39, 40, 44 はこのあたりに隠れている。" },
-  { title: "4. 西側を北から南", where: "塩原から向野。15が一番西。そこまで行ったら南へ流す。", ids: [13,14,16,15,20,22,23], sweep: "4, 11, 21 はこの列に重なっている可能性が高い。" },
-  { title: "5. 南西の塊", where: "三宅、横手の西。25と30のあいだに小さいピンが積んである。", ids: [24,25,30], sweep: "26, 27, 28, 29 をここで全部。" },
-  { title: "6. 南で終わり", where: "横手中の南。最後の31は外環状道路のすぐ北側。", ids: [12,9,10,34,33,32,31], sweep: "38 は33・34の近くに見え隠れしている。31のあと、そのまま外環へ出られる。" }
-];
-const byId = Object.fromEntries(DATA.order.map((s,i) => [s.n, { ...s, seq: i+1 }]));
-
-const driveMin = 48;
-const rows = [
-  [1.3, "置き配・戸建て"],
-  [2.0, "ふつうの玄関"],
-  [2.5, "集合・オートロック多め"]
-];
-const times = document.getElementById("times");
-rows.forEach((r, idx) => {
-  const total = driveMin + r[0]*47;
-  const h = Math.floor(total/60);
-  const m = Math.round(total%60);
-  const el = document.createElement("div");
-  el.className = "time" + (total <= 150 ? " ok" : " warn");
-  el.innerHTML = `<span>${r[1]} · 1件${r[0]}分</span><b>${h}時間${m}分</b><span>${total<=150 ? "2時間半に収まる" : "2時間半を超える"}</span>`;
-  times.appendChild(el);
+const AREA_KEY = "flex-priority-areas";
+const HERE_KEY = "flex-here";
+const DEPART_KEY = "flex-depart";
+const departInput = document.getElementById("depart");
+departInput.value = localStorage.getItem(DEPART_KEY) || "05:00";
+departInput.addEventListener("input", () => {
+  localStorage.setItem(DEPART_KEY, departInput.value);
+  schedule();
 });
-const budget = document.getElementById("budget");
-rows.forEach(r => {
-  const work = r[0]*47;
-  const total = driveMin + work;
-  const tr = document.createElement("tr");
-  tr.innerHTML = `<td>1件 ${r[0]}分</td><td>${work.toFixed(0)}分</td><td>${Math.floor(total/60)}時間${Math.round(total%60)}分</td><td>${total<=150?"収まる":"超える"}</td>`;
-  budget.appendChild(tr);
+const areasInput = document.getElementById("areas");
+areasInput.value = localStorage.getItem(AREA_KEY) || "";
+areasInput.addEventListener("input", () => {
+  localStorage.setItem(AREA_KEY, areasInput.value);
+  schedule();
 });
 
-const map = L.map("map", { zoomControl: true });
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution: "&copy; OpenStreetMap"
-}).addTo(map);
-const line = L.polyline(DATA.line.map(c => [c[1], c[0]]), { color: "#0c5c66", weight: 5, opacity: 0.9 }).addTo(map);
-const bounds = [];
-DATA.order.forEach((s, i) => {
-  const last = i === DATA.order.length-1;
-  const first = i === 0;
-  const color = first ? "#1d7a45" : last ? "#16324f" : "#0c5c66";
-  const marker = L.circleMarker([s.lat, s.lon], {
-    radius: first || last ? 16 : 13,
-    color: "#fff", weight: 2, fillColor: color, fillOpacity: 1
-  }).addTo(map);
-  marker.bindTooltip(String(s.n), { permanent: true, direction: "center", className: "pin-tip" });
-  const block = BLOCKS.find(b => b.ids.includes(s.n));
-  marker.bindPopup(`<b>${i+1}番目に届ける</b><br>Flexの番号 ${s.n}<br>${block ? block.title : ""}`);
-  bounds.push([s.lat, s.lon]);
-});
-map.fitBounds(bounds, { padding: [24, 24] });
+let here = null;
+try { here = JSON.parse(localStorage.getItem(HERE_KEY) || "null"); } catch (e) { here = null; }
+const hereLabel = document.getElementById("here-label");
+function showHere() {
+  hereLabel.textContent = here
+    ? "開始位置を保存しました。左回りはこの位置に一番近い停留から始まります。"
+    : "開始位置は未設定です。ナビ開始時は、Googleマップが今いる場所から案内します。";
+}
+showHere();
+document.getElementById("use-here").onclick = () => {
+  navigator.geolocation.getCurrentPosition((pos) => {
+    here = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+    localStorage.setItem(HERE_KEY, JSON.stringify(here));
+    showHere();
+    schedule();
+  }, () => {
+    hereLabel.textContent = "位置を取得できませんでした。ブラウザの位置情報を許可してください。";
+  }, { enableHighAccuracy: true, timeout: 8000 });
+};
+document.getElementById("clear-here").onclick = () => {
+  here = null;
+  localStorage.removeItem(HERE_KEY);
+  showHere();
+  schedule();
+};
 
-const style = document.createElement("style");
-style.textContent = ".pin-tip{background:transparent;border:0;box-shadow:none;color:#fff;font-weight:800;font-size:11px;padding:0;} .pin-tip:before{display:none}";
-document.head.appendChild(style);
+const params = new URLSearchParams(location.search);
+const demo = params.get("demo") === "1";
+const source = demo ? [
+  { id: 1, address: "福岡市中央区大名1丁目", lat: 33.5892, lon: 130.3924 },
+  { id: 2, address: "福岡市中央区赤坂2丁目", lat: 33.5801, lon: 130.3902 },
+  { id: 3, address: "福岡市中央区警固1丁目", lat: 33.5848, lon: 130.3948 },
+  { id: 4, address: "福岡市中央区平尾1丁目", lat: 33.5742, lon: 130.4031 },
+  { id: 5, address: "福岡市中央区赤坂3丁目", lat: 33.5794, lon: 130.3876 },
+  { id: 6, address: "福岡市中央区今泉1丁目", lat: 33.5834, lon: 130.3982 },
+  { id: 7, address: "福岡市中央区六本松2丁目", lat: 33.5764, lon: 130.3778 },
+  { id: 8, address: "福岡市中央区鳥飼1丁目", lat: 33.5822, lon: 130.3784 }
+] : (window.FLEX_STOPS || []);
 
-const saved = new Set(JSON.parse(localStorage.getItem("flex-done") || "[]"));
-function save() { localStorage.setItem("flex-done", JSON.stringify([...saved])); }
+let map, layer;
+let timer;
+function schedule() {
+  clearTimeout(timer);
+  timer = setTimeout(render, 250);
+}
 
-const root = document.getElementById("blocks");
-BLOCKS.forEach(block => {
-  const sec = document.createElement("section");
-  sec.className = "block";
-  const pts = block.ids.map(id => byId[id]);
-  const origin = pts[0], dest = pts[pts.length-1];
-  const wps = pts.slice(1, -1).map(p => `${p.lat},${p.lon}`).join("|");
-  const url = `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${origin.lat},${origin.lon}&destination=${dest.lat},${dest.lon}` + (wps ? `&waypoints=${encodeURIComponent(wps)}` : "");
-  sec.innerHTML = `<h3>${block.title}</h3><p class="where">${block.where}${block.sweep ? " " + block.sweep : ""}</p>`;
-  const ol = document.createElement("ol");
-  ol.className = "stops";
-  pts.forEach(p => {
-    const li = document.createElement("li");
-    if (p.seq === 1) li.classList.add("start");
-    if (p.seq === DATA.order.length) li.classList.add("end");
-    if (saved.has(p.n)) li.classList.add("done");
-    li.innerHTML = `<span class="seq">${p.seq}</span><span class="pinno">${p.n}<small>Flexの番号</small></span>`;
-    const label = document.createElement("label");
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = saved.has(p.n);
-    cb.addEventListener("change", () => {
-      if (cb.checked) saved.add(p.n); else saved.delete(p.n);
-      li.classList.toggle("done", cb.checked);
-      save();
-    });
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode("届けた"));
-    li.appendChild(label);
-    ol.appendChild(li);
+async function resolveAreas(names, stops) {
+  const bias = stops.length ? {
+    lat: stops.reduce((s, p) => s + p.lat, 0) / stops.length,
+    lon: stops.reduce((s, p) => s + p.lon, 0) / stops.length
+  } : { lat: 33.59, lon: 130.4 };
+  const areas = [];
+  for (const name of names) {
+    const area = { name, radiusM: FlexPlanner.DEFAULT_RADIUS_M };
+    try {
+      const url = "https://photon.komoot.io/api/?limit=5&lat=" + bias.lat + "&lon=" + bias.lon + "&q=" + encodeURIComponent(name + " 福岡市");
+      const data = await fetch(url).then((r) => r.json());
+      const hit = (data.features || []).find((f) => {
+        const city = (f.properties.city || "") + (f.properties.state || "");
+        return /福岡|Fukuoka/i.test(city);
+      }) || (data.features || [])[0];
+      if (hit) {
+        area.lon = hit.geometry.coordinates[0];
+        area.lat = hit.geometry.coordinates[1];
+      }
+    } catch (e) { /* 住所の文字一致だけで判定する */ }
+    areas.push(area);
+  }
+  return areas;
+}
+
+async function render() {
+  const names = FlexPlanner.parseAreaNames(areasInput.value);
+  const areas = names.length ? await resolveAreas(names, source) : [];
+  const departMin = FlexPlanner.clockToMin(departInput.value);
+  const ordered = FlexPlanner.planDay(source, {
+    areas: areas,
+    here: here,
+    departMin: departMin == null ? 5 * 60 : departMin,
+    serviceMin: 1.3
   });
-  sec.appendChild(ol);
-  const a = document.createElement("a");
-  a.className = "maps";
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener";
-  a.textContent = "この区間をGoogleマップで開く";
-  sec.appendChild(a);
-  root.appendChild(sec);
-});
+  const waiting = document.getElementById("waiting");
+  const ready = document.getElementById("ready");
+  const bar = document.getElementById("bar");
+  if (!ordered.length) {
+    waiting.hidden = false;
+    ready.hidden = true;
+    bar.hidden = true;
+    return;
+  }
+  waiting.hidden = true;
+  ready.hidden = false;
+  bar.hidden = false;
+  const prio = new Set(ordered.filter((s) => areas.some((a) => FlexPlanner.inArea(s, a))));
+  const restricted = ordered.filter((s) => s.inRestriction).length;
+  document.getElementById("summary").textContent =
+    ordered.length + "件。出発 " + departInput.value +
+    "。先に抜けるエリア " + (names.length ? names.join("、") : "なし") +
+    "。7:00–9:00の規制にかかるのは " + restricted + "件。1件1.3分で計算しています。";
+
+  if (!map) {
+    map = L.map("map");
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+  }
+  layer.clearLayers();
+  const latlngs = ordered.map((s) => [s.lat, s.lon]);
+  L.polyline(latlngs, { color: "#0c5c66", weight: 4 }).addTo(layer);
+  ordered.forEach((s, i) => {
+    const color = prio.has(s) ? "#9a5b12" : "#0c5c66";
+    const marker = L.circleMarker([s.lat, s.lon], {
+      radius: 14, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1
+    }).addTo(layer);
+    marker.bindTooltip(String(i + 1), { permanent: true, direction: "center", className: "pin-tip" });
+    marker.bindPopup("<b>" + (i + 1) + "番目</b><br>" + (s.address || ""));
+  });
+  map.fitBounds(latlngs, { padding: [24, 24] });
+
+  const legs = FlexPlanner.chunkLegs(ordered, FlexPlanner.LEG_SIZE);
+  const legsEl = document.getElementById("legs");
+  legsEl.innerHTML = "";
+  const go = document.getElementById("go");
+  legs.forEach((leg, index) => {
+    const from = ordered.indexOf(leg[0]) + 1;
+    const to = ordered.indexOf(leg[leg.length - 1]) + 1;
+    const href = FlexPlanner.mapsUrl(leg, index === 0);
+    const a = document.createElement("a");
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = (index + 1) + "区間 " + from + "–" + to;
+    legsEl.appendChild(a);
+    if (index === 0) {
+      go.href = href;
+      go.textContent = "Googleマップでナビ開始（" + from + "–" + to + "件目）";
+    }
+  });
+
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  ordered.forEach((s, i) => {
+    const li = document.createElement("li");
+    if (prio.has(s)) li.classList.add("prio");
+    const one = FlexPlanner.mapsUrl([s], true);
+    const when = FlexPlanner.formatMin(s.arriveMin);
+    const tag = s.inRestriction ? " · 7–9時の規制内" : "";
+    li.innerHTML = '<span class="seq">' + (i + 1) + '</span><div class="addr"><b>' +
+      (s.address || "停留 " + s.id) + '</b>到着 ' + when + tag +
+      '<br><a href="' + one + '" target="_blank" rel="noopener">この件だけナビ</a></div>';
+    list.appendChild(li);
+  });
+}
+
+render();
 </script>
 </body>
 </html>
