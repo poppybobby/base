@@ -142,4 +142,68 @@ assert.strictEqual(parsed[1].current, false);
 assert.ok(!p.streetQuery(parsed[0].address).includes("コモン"));
 parsed.forEach((s) => console.log("parsed", s.id, p.streetQuery(s.address)));
 
+// 本番の失敗の型。住所は当日の46件ではなく、位置が35件しか無いときにナビを出さない規則。
+const partialDay = Array.from({ length: 46 }, (_, i) => ({
+  id: i + 1,
+  address: "福岡市博多区光丘町" + (i + 1) + "丁目1",
+  lat: i < 35 ? 33.54 + i * 0.0001 : null,
+  lon: i < 35 ? 130.46 + i * 0.0001 : null,
+}));
+const partialGate = p.routeGate(partialDay);
+assert.strictEqual(partialGate.deliveries.length, 46);
+assert.strictEqual(partialGate.located, 35);
+assert.strictEqual(partialGate.missing.length, 11);
+assert.strictEqual(partialGate.ready, false);
+const partialNav = p.navFromRoute(partialDay);
+assert.strictEqual(partialNav.ready, false);
+assert.deepStrictEqual(partialNav.urls, []);
+assert.strictEqual(partialNav.covered, 0);
+
+const fullDay = partialDay.map((s, i) => Object.assign({}, s, {
+  lat: 33.54 + i * 0.0001,
+  lon: 130.46 + i * 0.0001,
+}));
+const fullGate = p.routeGate(fullDay);
+assert.strictEqual(fullGate.ready, true);
+assert.strictEqual(fullGate.deliveries.length, 46);
+const fullNav = p.navFromRoute(fullGate.deliveries);
+assert.strictEqual(fullNav.ready, true);
+assert.strictEqual(fullNav.covered, 46);
+assert.strictEqual(fullNav.deliveries, 46);
+assert.strictEqual(fullNav.urls.length, 5);
+const firstUrl = new URL(fullNav.urls[0]);
+const secondUrl = new URL(fullNav.urls[1]);
+assert.strictEqual(firstUrl.searchParams.get("origin"), null);
+assert.strictEqual(firstUrl.searchParams.get("dir_action"), "navigate");
+assert.strictEqual(firstUrl.searchParams.get("travelmode"), "driving");
+assert.strictEqual(firstUrl.searchParams.get("optimize"), null);
+assert.strictEqual(firstUrl.searchParams.get("destination"), fullDay[9].lat + "," + fullDay[9].lon);
+assert.strictEqual(secondUrl.searchParams.get("origin"), fullDay[9].lat + "," + fullDay[9].lon);
+assert.ok(fullNav.urls.every((url) => !url.includes("optimize")));
+
+const depotAndStops = [{ id: 1, address: "Logiport福岡南", lat: 33.5, lon: 130.4 }].concat(fullDay.slice(1));
+const depotGate = p.routeGate(depotAndStops);
+assert.strictEqual(depotGate.deliveries.length, 45);
+assert.strictEqual(depotGate.ready, true);
+assert.ok(depotGate.deliveries.every((s) => !/logiport/i.test(s.address)));
+
+const kasugaNav = p.navFromRoute(kasuga);
+assert.strictEqual(kasugaNav.ready, true);
+assert.strictEqual(kasugaNav.covered, 4);
+assert.strictEqual(kasugaNav.deliveries, 4);
+assert.ok(!kasugaNav.urls[0].includes("origin="));
+
+const merged = p.mergeParsed(
+  p.parseFlexText("スケジュール済み 04:00 - 07:59\n春日市天神山4-117\n"),
+  p.parseFlexText("| 12| スケジュール済み 04:00 - 07:59\n春日市天神山 4-117\n")
+);
+assert.strictEqual(merged.length, 1, JSON.stringify(merged));
+assert.strictEqual(merged[0].id, 12);
+
+const reader = require("./reader.js");
+const narrow = reader.narrowImageMessage(76);
+assert.ok(narrow.includes("76px"), narrow);
+assert.ok(!narrow.includes("停留"), narrow);
+assert.strictEqual(reader.MIN_IMAGE_WIDTH, 500);
+
 console.log("planner tests ok");

@@ -10,6 +10,7 @@
   body { margin: 0; font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif; color: var(--ink); background: var(--paper); line-height: 1.5; }
   header, main { max-width: 760px; margin: 0 auto; padding: 20px 16px 32px; }
   h1 { font-size: 28px; line-height: 1.25; margin: 4px 0 8px; }
+  h2 { font-size: 16px; margin: 18px 0 8px; }
   a { color: var(--teal); font-weight: 700; }
   .verdict { border-radius: 16px; padding: 16px; font-size: 22px; font-weight: 800; }
   .wait { background: #fff6e8; }
@@ -20,99 +21,159 @@
   th { color: var(--muted); font-size: 12px; }
   .ok { color: var(--green); font-weight: 800; }
   .ng { color: var(--red); font-weight: 800; }
-  code { font-family: ui-monospace, monospace; font-size: 12px; }
+  .note { color: var(--muted); font-size: 13px; }
 </style>
 </head>
 <body>
 <header>
   <p><a href="index.html">当日の最速ルートへ戻る</a></p>
   <h1>動作の監査</h1>
-  <p>同じ読み取りで、同梱のFlexリスト画像を最後まで通し、GoogleマップのナビURLができるまでを合格にします。</p>
-  <div id="verdict" class="verdict wait">検査しています</div>
+  <p>完成は、ピン番号1から46の46件が写った鮮明な長尺をこのアプリが読み、Logiport と市の付かない江辻を除いた配達先の位置をすべて取り、その全件が GoogleマップのナビURLに入っていることです。</p>
+  <p>見本の4件、下の表の行数、位置が取れた一部の件数は、46件の完成ではありません。</p>
+  <div id="verdict" class="verdict wait">入力から最後まで実行しています</div>
 </header>
 <main>
+  <h2>完成に必要なもの</h2>
   <table>
-    <thead><tr><th>結果</th><th>検査</th><th>内容</th></tr></thead>
+    <thead><tr><th></th><th>完成</th><th>いま実行した入力</th></tr></thead>
+    <tbody>
+      <tr><td>入力</td><td>ピン1から46が写った鮮明な長尺（横500px以上）</td><td id="input-now">確認しています</td></tr>
+      <tr><td>件数</td><td>拠点の行を除いた配達先の全件</td><td id="count-now">確認しています</td></tr>
+      <tr><td>最後の画面</td><td>その全件がナビURLに入っている</td><td id="nav-now">ルートは作っていません</td></tr>
+    </tbody>
+  </table>
+  <h2>実行</h2>
+  <p class="note">表の合格と不合格は規則です。配達の件数ではありません。</p>
+  <table>
+    <thead><tr><th>結果</th><th>種別</th><th>確認</th><th>実行した結果</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
 </main>
-<script src="vendor/tesseract/tesseract.min.js?v=10"></script>
-<script src="planner.js?v=10"></script>
-<script src="reader.js?v=10"></script>
+<script src="vendor/tesseract/tesseract.min.js?v=11"></script>
+<script src="planner.js?v=11"></script>
+<script src="reader.js?v=11"></script>
 <script>
 const rows = document.getElementById("rows");
 const results = [];
+const completion = { ok: false, detail: "ピン1から46の鮮明な長尺は入力に無い。ルートは作っていない。" };
 
-function add(name, ok, detail) {
-  results.push({ name, ok, detail });
+function add(kind, name, ok, detail) {
+  results.push({ kind: kind, name: name, ok: ok, detail: detail });
   const tr = document.createElement("tr");
-  tr.innerHTML = "<td class='" + (ok ? "ok" : "ng") + "'>" + (ok ? "合格" : "不合格") + "</td><td>" + name + "</td><td><code>" + detail + "</code></td>";
+  [ok ? "合格" : "不合格", kind, name, detail].forEach(function (text, i) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    if (i === 0) td.className = ok ? "ok" : "ng";
+    tr.appendChild(td);
+  });
   rows.appendChild(tr);
 }
 
+function idsOf(stops) {
+  const ids = [];
+  stops.forEach(function (s) {
+    if (s.id != null && ids.indexOf(s.id) === -1) ids.push(s.id);
+  });
+  ids.sort(function (a, b) { return a - b; });
+  return ids;
+}
+
+function hasPins1to46(ids) {
+  for (let n = 1; n <= 46; n++) if (ids.indexOf(n) === -1) return false;
+  return true;
+}
+
 function runLocal(source) {
-  add("画面は版10", source.includes("画面の版 10") && source.includes("planner.js?v=10") && source.includes("reader.js?v=10"), source.includes("画面の版 10") ? "版10の画面" : "版の表示が違う");
-  add("1件目と最後だけ外す", source.includes("withoutTerminalStops") && source.includes("市や区の番地") && !source.includes('indexOf("江辻")'), "市区の番地は残す");
+  add("規則", "画面は版11で、欠けたらナビを出さない",
+    source.includes("画面の版 11") && source.includes("FlexPlanner.routeGate") && source.includes("FlexPlanner.navFromRoute") && source.includes("ルートは作っていません") && !source.includes("stops.filter((s) => s.lat != null)"),
+    source.includes("画面の版 11") ? "画面の版 11" : "版の表示が違う");
+  add("規則", "空のときにあいだの配達先が無いとは言わない", !source.includes("あいだの配達先が残っていません"), "画面の文");
 
   const day = FlexPlanner.parseFlexText("Logiport福岡南\nスケジュール済み 04:00 - 07:59\n福岡市博多区光丘町1丁目1\nスケジュール済み 04:00 - 07:59\n春日市天神山4-117\nスケジュール済み 04:00 - 07:59\n柏屋町江辻84C");
   const mid = FlexPlanner.withoutTerminalStops(day);
-  add("端の集荷と持ち戻りを外す", mid.length === 2 && mid[0].address.includes("光丘町1丁目1") && mid[1].address.includes("天神山4-117"), mid.map((s) => s.address).join(" | ") || "行なし");
+  add("規則", "光丘町と天神山を残し拠点だけ外す", mid.length === 2 && mid[0].address.includes("光丘町1丁目1") && mid[1].address.includes("天神山4-117") && !mid.some(function (s) { return /logiport|江辻84/i.test(s.address); }), mid.map(function (s) { return s.address; }).join(" | ") || "行なし");
   const kept = FlexPlanner.withoutTerminalStops(FlexPlanner.parseFlexText("Logiport福岡南\nスケジュール済み 05:00 - 21:00\n春日市柏屋町江辻1丁目2-3\nスケジュール済み 05:00 - 21:00\n柏屋町江辻84C"));
-  add("あいだの江辻の番地は残す", kept.length === 1 && kept[0].address.includes("江辻1丁目2-3"), kept.map((s) => s.address).join(" | ") || "行なし");
-  add("1件だけなら配達先は残さない", FlexPlanner.withoutTerminalStops([{ address: "Logiport福岡南" }]).length === 0, "1件");
-  add("2件なら市区の番地を残す", FlexPlanner.withoutTerminalStops(day.slice(0, 2)).length === 1 && FlexPlanner.withoutTerminalStops(day.slice(0, 2))[0].address.includes("光丘町"), "光丘町");
+  add("規則", "市の付く江辻の番地は残す", kept.length === 1 && kept[0].address.includes("江辻1丁目2-3"), kept.map(function (s) { return s.address; }).join(" | ") || "行なし");
+  const two = FlexPlanner.withoutTerminalStops(day.slice(0, 2));
+  add("規則", "2件の並びから光丘町を消さない", two.length === 1 && two[0].address.includes("光丘町1丁目1"), two.map(function (s) { return s.address; }).join(" | ") || "行なし");
+  add("規則", "Logiportだけなら配達先は残さない", FlexPlanner.withoutTerminalStops([{ address: "Logiport福岡南" }]).length === 0, "Logiport福岡南");
 
   const screen = FlexPlanner.parseFlexText("# S.L02.0V\n福岡市 博多区 光丘町1丁目1\n0 22:52に配達を完了\nLogiport福岡南");
-  const screenSame = FlexPlanner.parseFlexText("# S.L02.0V 福岡市 博多区 光丘町1丁目1 Logiport福岡南");
-  add("光丘町を読む", screen.length === 2 && screen[0].address.includes("光丘町1丁目1") && /logiport/i.test(screen[1].address), screen.map((s) => s.address).join(" | ") || "行なし");
-  const forbidden = "あいだの配達先が残っていません";
-  add("本番の貼り付けで空と言わない", FlexPlanner.withoutTerminalStops(screen).some((s) => s.address.includes("光丘町1丁目1")) && !FlexPlanner.withoutTerminalStops(screen).some((s) => /logiport/i.test(s.address)), FlexPlanner.withoutTerminalStops(screen).map((s) => s.address).join(" | ") || forbidden);
-  add("ルート番号と同じ行の番地も残す", screenSame.length === 1 && screenSame[0].address.includes("光丘町1丁目1") && !/logiport/i.test(screenSame[0].address), screenSame.map((s) => s.address).join(" | ") || "行なし");
-  const sample = FlexPlanner.parseFlexText("| 9 | 次の目的地\nスケジュール済み 04:00 - 07:59\n福岡県紅葉ヶ丘西 6-1-1 C-102\nスケジュール済み 04:00 - 07:59\n春日市紅葉ヶ丘西 2-78\n|11| スケジュール済み 04:00 - 07:59\n春日市一の谷 4丁目94-2\n| 12| スケジュール済み 04:00 - 07:59\n春日市天神山 4-117");
-  add("春日4件は拠点ではないので残す", FlexPlanner.withoutTerminalStops(sample).length === 4, FlexPlanner.withoutTerminalStops(sample).map((s) => s.id).join(",") || forbidden);
-  add("リスト4件の番号", sample.map((s) => s.id).join(",") === "9,10,11,12", sample.map((s) => s.id).join(","));
-  add("次の目的地は先頭", sample[0] && sample[0].current === true, String(sample[0] && sample[0].current));
-  add("県名だけの重心は捨てる", FlexPlanner.tooCoarse("福岡県紅葉ヶ丘西6-1-1", "福岡県") === true, "福岡県");
-  add("丁目のある結果は残す", FlexPlanner.tooCoarse("紅葉ヶ丘西6-1-1", "春日市紅葉ヶ丘西六丁目") === false, "春日市紅葉ヶ丘西六丁目");
+  const left = FlexPlanner.withoutTerminalStops(screen);
+  add("規則", "光丘町を読んでLogiportを外す", left.length === 1 && left[0].address.includes("光丘町1丁目1"), left.map(function (s) { return s.address; }).join(" | ") || "行なし");
 
+  const sample = FlexPlanner.parseFlexText("| 9 | 次の目的地\nスケジュール済み 04:00 - 07:59\n福岡県紅葉ヶ丘西 6-1-1 C-102\nスケジュール済み 04:00 - 07:59\n春日市紅葉ヶ丘西 2-78\n|11| スケジュール済み 04:00 - 07:59\n春日市一の谷 4丁目94-2\n| 12| スケジュール済み 04:00 - 07:59\n春日市天神山 4-117");
+  const sampleIds = idsOf(FlexPlanner.withoutTerminalStops(sample));
+  add("規則", "見本テキストは春日の4件で46件ではない", sampleIds.join(",") === "9,10,11,12" && !hasPins1to46(sampleIds), sampleIds.join(","));
+
+  const partial = Array.from({ length: 46 }, function (_, i) {
+    return { id: i + 1, address: "福岡市博多区光丘町" + (i + 1) + "丁目1", lat: i < 35 ? 33.54 + i * 0.0001 : null, lon: i < 35 ? 130.46 + i * 0.0001 : null };
+  });
+  const gate = FlexPlanner.routeGate(partial);
+  const refused = FlexPlanner.navFromRoute(partial);
+  add("規則", "位置が35件だけの46件ではナビURLを出さない",
+    gate.deliveries.length === 46 && gate.located === 35 && gate.missing.length === 11 && gate.ready === false && refused.urls.length === 0 && refused.covered === 0,
+    "配達先46件、位置35件。これは当日の住所ではなく、欠けたときの規則。ナビURLは出していない");
+
+  const full = partial.map(function (s, i) { return Object.assign({}, s, { lat: 33.54 + i * 0.0001, lon: 130.46 + i * 0.0001 }); });
+  const fullNav = FlexPlanner.navFromRoute(FlexPlanner.routeGate(full).deliveries);
+  const first = fullNav.urls[0] ? new URL(fullNav.urls[0]) : null;
+  const second = fullNav.urls[1] ? new URL(fullNav.urls[1]) : null;
+  add("規則", "位置を埋めた配列ならナビURLに全件入る",
+    fullNav.ready === true && fullNav.covered === 46 && fullNav.urls.length === 5 && first && first.searchParams.get("origin") === null && first.searchParams.get("optimize") === null && second && second.searchParams.get("origin") === full[9].lat + "," + full[9].lon,
+    fullNav.ready ? "配達先46件がナビURLに入った。当日の長尺ではなく、位置を埋めた規則" : "ナビURLを作れていない");
+
+  add("規則", "県名だけの重心は捨てる", FlexPlanner.tooCoarse("福岡県紅葉ヶ丘西6-1-1", "福岡県") === true, "福岡県");
+  add("規則", "丁目のある結果は残す", FlexPlanner.tooCoarse("紅葉ヶ丘西6-1-1", "春日市紅葉ヶ丘西六丁目") === false, "春日市紅葉ヶ丘西六丁目");
   const queries = FlexPlanner.geocodeCandidates("福岡県紅葉ヶ丘西 6B-1-1 C-102");
-  add("県名を外した検索語がある", queries.some((q) => q.includes("紅葉ヶ丘西6-1-1") && !q.startsWith("福岡県")), queries.join(" | "));
+  add("規則", "県名を外した検索語がある", queries.some(function (q) { return q.includes("紅葉ヶ丘西6-1-1") && q.indexOf("福岡県") !== 0; }), queries.join(" | "));
 
   const early = { id: "early", address: "締切が朝", lat: 33.52, lon: 130.45, windowEndMin: 7 * 60 + 59 };
   const later = { id: "later", address: "締切が夜", lat: 33.53, lon: 130.46, windowEndMin: 21 * 60 };
   const atEight = FlexPlanner.planDay([later, early], { departMin: 8 * 60 });
-  add("8時出発では締切7:59が先", atEight[0].id === "early" && atEight[1].arriveMin >= 9 * 60, atEight.map((s) => s.id + "@" + FlexPlanner.formatMin(s.arriveMin)).join(" "));
+  add("規則", "8時出発では締切7:59が先", atEight[0].id === "early" && atEight[1].arriveMin >= 9 * 60, atEight.map(function (s) { return s.id + "@" + FlexPlanner.formatMin(s.arriveMin); }).join(" "));
   const inside = FlexPlanner.planDay([later], { departMin: 8 * 60, endMin: 8 * 60 + 30 });
-  add("終了が9時前なら規制中でも回る", inside[0].arriveMin < 9 * 60, FlexPlanner.formatMin(inside[0].arriveMin));
+  add("規則", "終了が9時前なら規制中でも回る", inside[0].arriveMin < 9 * 60 && inside[0].inRestriction === true, FlexPlanner.formatMin(inside[0].arriveMin));
 
-  const kasuga = FlexPlanner.planDay([
-    { id: 9, address: "春日市紅葉ヶ丘西6-1-1", lat: 33.522453, lon: 130.454285, windowEndMin: 7 * 60 + 59 },
-    { id: 10, address: "春日市紅葉ヶ丘西2-78", lat: 33.521805, lon: 130.455276, windowEndMin: 7 * 60 + 59 },
-    { id: 11, address: "春日市一の谷4丁目94-2", lat: 33.520412, lon: 130.448502, windowEndMin: 7 * 60 + 59 },
-    { id: 12, address: "春日市天神山4-117", lat: 33.515583, lon: 130.450897, windowEndMin: 7 * 60 + 59 }
-  ], { departMin: 5 * 60 + 13, here: { lat: 33.522453, lon: 130.454285 } });
-  add("春日4件は7時前に着く", kasuga.every((s) => s.arriveMin < 7 * 60), kasuga.map((s) => s.id + "@" + FlexPlanner.formatMin(s.arriveMin)).join(" "));
-
-  const legs = FlexPlanner.chunkLegs(Array.from({ length: 25 }, (_, i) => ({ id: i, lat: i, lon: i })), 10);
-  const nav = FlexPlanner.mapsUrl(legs[0], true);
-  add("ナビは現在地から開始", nav.includes("dir_action=navigate") && !nav.includes("origin="), nav.slice(0, 80));
-  add("25件は3区間", legs.length === 3 && legs[1][0].id === 9, String(legs.length));
+  const areas = FlexPlanner.planDay([
+    { id: 1, address: "福岡市中央区大名1丁目", lat: 33.589, lon: 130.392, windowEndMin: 21 * 60 },
+    { id: 2, address: "福岡市中央区赤坂2丁目", lat: 33.58, lon: 130.39, windowEndMin: 21 * 60 },
+    { id: 3, address: "福岡市中央区警固1丁目", lat: 33.585, lon: 130.395, windowEndMin: 21 * 60 }
+  ], { departMin: 10 * 60, areas: [{ name: "赤坂" }, { name: "警固" }] });
+  add("規則", "渋滞エリアは締切の次に回る", areas[0].id === 2 && areas[1].id === 3, areas.map(function (s) { return s.id; }).join(","));
 
   const ccw = FlexPlanner.orderCounterclockwise(
     [{ id: "N", lat: 1, lon: 0 }, { id: "E", lat: 0, lon: 1 }, { id: "S", lat: -1, lon: 0 }, { id: "W", lat: 0, lon: -1 }],
     { lat: 1, lon: 0 }
-  ).map((s) => s.id).join(",");
-  add("同じ距離なら左回り", ccw === "N,W,S,E", ccw);
+  ).map(function (s) { return s.id; }).join(",");
+  add("規則", "同じ距離なら左回り", ccw === "N,W,S,E", ccw);
+}
+
+async function runNarrow() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 76;
+  canvas.height = 400;
+  const blob = await new Promise(function (resolve) { canvas.toBlob(resolve, "image/jpeg", 0.8); });
+  const file = new File([blob], "crushed.jpg", { type: "image/jpeg" });
+  const reader = FlexReader.create({ setStatus: function () {} });
+  let message = "";
+  try {
+    await reader.readFile(file);
+    message = "例外にならなかった";
+  } catch (e) {
+    message = e && e.message ? e.message : "停止";
+  }
+  add("規則", "横76pxは原本を選ぶよう伝える", message.indexOf("76px") !== -1 && message.indexOf("停留") === -1, message);
 }
 
 async function locate(address) {
   const queries = FlexPlanner.geocodeCandidates(address);
-  for (const q of queries) {
-    const data = await fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(q)).then((r) => r.json());
+  for (let i = 0; i < queries.length; i++) {
+    const data = await fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(queries[i])).then(function (r) { return r.json(); });
     if (!data || !data.length) continue;
     const title = data[0].properties.title;
-    if (FlexPlanner.tooCoarse(q, title)) continue;
-    return { q, title, lat: data[0].geometry.coordinates[1], lon: data[0].geometry.coordinates[0] };
+    if (FlexPlanner.tooCoarse(queries[i], title)) continue;
+    return { q: queries[i], title: title, lat: data[0].geometry.coordinates[1], lon: data[0].geometry.coordinates[0] };
   }
   return null;
 }
@@ -124,72 +185,100 @@ function near(hit, lat, lon) {
 
 async function runGeo() {
   const tenjin = await locate("春日市天神山4-117");
-  add("天神山は春日の番地", near(tenjin, 33.515583, 130.450897), tenjin ? tenjin.title + " " + tenjin.lat.toFixed(5) + "," + tenjin.lon.toFixed(5) : "位置なし");
+  add("規則", "見本の天神山は春日の番地", near(tenjin, 33.515583, 130.450897), tenjin ? tenjin.title + " " + tenjin.lat.toFixed(5) + "," + tenjin.lon.toFixed(5) : "位置なし");
   const momiji = await locate("福岡県紅葉ヶ丘西6-1-1");
   const notPrefecture = momiji && Math.abs(momiji.lat - 33.606388) > 0.05;
-  add("紅葉ヶ丘西は県の中心に落ちない", near(momiji, 33.522453, 130.454285) && notPrefecture, momiji ? momiji.q + " → " + momiji.title : "位置なし");
+  add("規則", "紅葉ヶ丘西は県の中心に落ちない", near(momiji, 33.522453, 130.454285) && notPrefecture, momiji ? momiji.q + " → " + momiji.title : "位置なし");
   const hikarigaoka = await locate("福岡市博多区光丘町1丁目1");
-  add("光丘町1丁目の位置が取れる", near(hikarigaoka, 33.540054, 130.466263), hikarigaoka ? hikarigaoka.title + " " + hikarigaoka.lat.toFixed(5) + "," + hikarigaoka.lon.toFixed(5) : "位置なし");
+  add("規則", "光丘町1丁目の位置が取れる", near(hikarigaoka, 33.540054, 130.466263), hikarigaoka ? hikarigaoka.title + " " + hikarigaoka.lat.toFixed(5) + "," + hikarigaoka.lon.toFixed(5) : "位置なし");
 }
 
 function finish() {
-  const failed = results.filter((r) => !r.ok);
   const box = document.getElementById("verdict");
-  box.className = "verdict " + (failed.length ? "fail" : "pass");
-  box.textContent = failed.length ? "不合格 " + failed.length + "件。最初は「" + failed[0].name + "」" : "合格 " + results.length + "件";
+  const ruleFails = results.filter(function (r) { return r.kind === "規則" && !r.ok; });
+  let text = "未完了。";
+  if (ruleFails.length) text += "規則「" + ruleFails[0].name + "」が不合格。";
+  text += completion.detail;
+  if (/合格\s*\d+\s*件|不合格\s*\d+\s*件/.test(text)) text = "未完了。判定文が検査の件数になっている。ルートは作っていない。";
+  box.textContent = text;
+  box.className = "verdict " + (completion.ok && !ruleFails.length ? "pass" : "fail");
 }
 
 async function runImage() {
   const box = document.getElementById("verdict");
-  const reader = FlexReader.create({ setStatus: function (text) { box.textContent = text; } });
   const response = await fetch("fixtures/flex-list.png", { cache: "no-store" });
   if (!response.ok) throw new Error("リスト画像がありません");
-  const file = new File([await response.blob()], "flex-list.png", { type: "image/png" });
+  const blob = await response.blob();
+  const bitmap = await createImageBitmap(blob);
+  const width = bitmap.width;
+  const height = bitmap.height;
+  const file = new File([blob], "flex-list.png", { type: "image/png" });
+  const reader = FlexReader.create({ setStatus: function (text) { box.textContent = text; } });
   const text = await reader.readFile(file);
-  const parsed = FlexPlanner.withoutTerminalStops(FlexPlanner.parseFlexText(text));
-  add("画像から4件読む", parsed.length >= 4 && parsed.filter((s) => /天神山|紅葉|一の谷/.test(s.address)).length >= 3, parsed.map((s) => s.address).join(" | ") || "行なし");
+  const parsed = FlexPlanner.withoutTerminalStops(FlexPlanner.mergeParsed([], FlexPlanner.parseFlexText(text)));
+  const ids = idsOf(parsed);
+  const addresses = parsed.map(function (s) { return s.address; }).join(" / ");
+  const kasugaFixture = width === 1080 && height === 2424;
+  document.getElementById("input-now").textContent = "fixtures/flex-list.png 横" + width + "px 縦" + height + "px。読んだ番号は " + (ids.join("、") || "なし") + "。";
+  document.getElementById("count-now").textContent = "アプリが読んだ配達先は" + parsed.length + "件。ピン1から46の長尺ではない。";
+  add("規則", "見本画像から春日市の番地を読む",
+    /天神山/.test(addresses) && /紅葉/.test(addresses) && /一の谷/.test(addresses) && !hasPins1to46(ids),
+    addresses || "行なし");
+  const pins = hasPins1to46(ids);
+  if (kasugaFixture || !pins) {
+    completion.ok = false;
+    completion.detail = "入力画像は横" + width + "px、縦" + height + "px。アプリが読んだ配達先は" + parsed.length + "件（番号" + (ids.join("、") || "なし") + "）。春日市の見本であり、ピン1から46の鮮明な長尺ではない。ルートは作っていない。";
+    document.getElementById("nav-now").textContent = "ルートは作っていません";
+    add("完成", "ピン1から46の全件がナビに入る", false, completion.detail);
+    return;
+  }
   const located = [];
   for (let i = 0; i < parsed.length; i++) {
-    box.textContent = "画像の住所を確認しています " + (i + 1) + "/" + parsed.length;
+    box.textContent = "読んだ住所の位置を取っています " + (i + 1) + "/" + parsed.length;
     const hit = await locate(parsed[i].address);
-    if (hit) located.push(Object.assign({}, parsed[i], hit));
+    located.push(hit ? Object.assign({}, parsed[i], hit) : parsed[i]);
   }
-  add("画像の住所が位置を取る", located.length >= 4, located.length + "/" + parsed.length);
-  const ordered = FlexPlanner.planDay(located, { departMin: 5 * 60, endMin: 8 * 60, serviceMin: 1.3 });
-  const nav = FlexPlanner.mapsUrl(ordered, true);
-  const navOk = ordered.length >= 4 && nav.includes("dir_action=navigate") && !nav.includes("origin=") && !nav.includes("optimize");
-  add("画像からナビURLまで作る", navOk, nav.slice(0, 160) || "URLなし");
-  const link = document.createElement("p");
-  const a = document.createElement("a");
-  a.href = nav;
-  a.textContent = "この画像のGoogleマップナビ";
-  a.target = "_blank";
-  a.rel = "noopener";
-  link.appendChild(a);
-  document.querySelector("main").appendChild(link);
+  const gate = FlexPlanner.routeGate(located);
+  const ordered = gate.ready ? FlexPlanner.planDay(gate.deliveries, { departMin: 5 * 60, endMin: 21 * 60, serviceMin: 1.3 }) : [];
+  const nav = FlexPlanner.navFromRoute(ordered);
+  const allIn = gate.ready && nav.ready && nav.covered === ordered.length && ordered.length === gate.deliveries.length;
+  completion.ok = allIn;
+  completion.detail = allIn
+    ? "ピン1から46を読み、拠点を除いた配達先" + ordered.length + "件がすべてナビURLに入っている。"
+    : "ピン番号は読めたが、配達先" + gate.deliveries.length + "件のうち位置が取れたのは" + gate.located + "件。ナビURLに全件は入っていない。ルートは作っていない。";
+  document.getElementById("nav-now").textContent = allIn ? "配達先" + ordered.length + "件がナビURLに入った" : "ルートは作っていません";
+  add("完成", "ピン1から46の全件がナビに入る", allIn, completion.detail);
 }
 
 (async function () {
   let source = "";
   try {
-    source = await fetch("index.html?v=10", { cache: "no-store" }).then((r) => r.text());
+    source = await fetch("index.html?v=11", { cache: "no-store" }).then(function (r) { return r.text(); });
   } catch (e) {
     source = "";
   }
   try {
     runLocal(source);
   } catch (e) {
-    add("検査そのもの", false, e && e.message ? e.message : "停止");
+    add("規則", "規則の実行", false, e && e.message ? e.message : "停止");
+  }
+  try {
+    await runNarrow();
+  } catch (e) {
+    add("規則", "横76pxは原本を選ぶよう伝える", false, e && e.message ? e.message : "停止");
   }
   try {
     await runGeo();
   } catch (e) {
-    add("住所検索への接続", false, e && e.message ? e.message : "接続できない");
+    add("規則", "住所検索への接続", false, e && e.message ? e.message : "接続できない");
   }
   try {
     await runImage();
   } catch (e) {
-    add("画像からナビまで", false, e && e.message ? e.message : "停止");
+    completion.ok = false;
+    completion.detail = "画像の読み取りが止まった。" + (e && e.message ? e.message : "停止") + " ピン1から46の鮮明な長尺は無い。ルートは作っていない。";
+    document.getElementById("nav-now").textContent = "ルートは作っていません";
+    add("完成", "ピン1から46の全件がナビに入る", false, completion.detail);
   }
   finish();
 })();

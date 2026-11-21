@@ -273,6 +273,71 @@
     return list.filter((s) => !isStationNotation(s.address));
   }
 
+  function hasPoint(stop) {
+    return !!stop && Number.isFinite(stop.lat) && Number.isFinite(stop.lon);
+  }
+
+  // 配達先の位置が1件でも欠けていれば、ナビは作らない。
+  function routeGate(stops) {
+    const deliveries = withoutTerminalStops(stops || []);
+    const missing = deliveries.filter((s) => !hasPoint(s));
+    return {
+      deliveries: deliveries,
+      located: deliveries.length - missing.length,
+      missing: missing,
+      ready: deliveries.length > 0 && missing.length === 0,
+    };
+  }
+
+  // 並びの全件がURLに入るときだけURLを返す。欠けていれば空。
+  function navFromRoute(ordered) {
+    const list = ordered || [];
+    const located = list.filter(hasPoint).length;
+    if (!list.length || located !== list.length) {
+      return { ready: false, urls: [], covered: 0, deliveries: list.length, located: located };
+    }
+    const legs = chunkLegs(list, LEG_SIZE);
+    const urls = legs.map((leg, index) => mapsUrl(leg, index === 0));
+    const covered = list.filter((s) => {
+      const token = s.lat + "," + s.lon;
+      return urls.some((url) => url.indexOf(encodeURIComponent(token)) !== -1 || url.indexOf(token) !== -1);
+    }).length;
+    const first = urls[0] || "";
+    const ready = covered === list.length
+      && first.indexOf("dir_action=navigate") !== -1
+      && first.indexOf("origin=") === -1
+      && urls.every((url) => url.indexOf("optimize") === -1);
+    return {
+      ready: ready,
+      urls: ready ? urls : [],
+      covered: covered,
+      deliveries: list.length,
+      located: located,
+    };
+  }
+
+  function mergeParsed(stops, parsed) {
+    const list = (stops || []).map((s) => Object.assign({}, s));
+    (parsed || []).forEach((s) => {
+      const key = streetQuery(s.address);
+      const prev = (s.id != null && list.find((x) => x.id === s.id))
+        || list.find((x) => streetQuery(x.address) === key);
+      if (!prev) {
+        list.push(Object.assign({}, s));
+        return;
+      }
+      if ((s.address || "").length > (prev.address || "").length) prev.address = s.address;
+      if (s.id != null) prev.id = s.id;
+      if (s.current) prev.current = true;
+      if (s.windowEnd && !prev.windowEnd) {
+        prev.windowEnd = s.windowEnd;
+        prev.windowEndMin = s.windowEndMin;
+        prev.windowStart = s.windowStart;
+      }
+    });
+    return list;
+  }
+
   function parseFlexText(text) {
     const lines = String(text || "")
       .split(/\n/)
@@ -563,5 +628,8 @@
     stripNoise,
     withoutTerminalStops,
     tooCoarse,
+    routeGate,
+    navFromRoute,
+    mergeParsed,
   };
 });
