@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>当日の最速ルート</title>
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=10">
-<script src="vendor/tesseract/tesseract.min.js?v=10"></script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=11">
+<script src="vendor/tesseract/tesseract.min.js?v=11"></script>
 <style>
   :root {
     --ink: #172028;
@@ -110,9 +110,9 @@
 <header>
   <div class="kicker">AMAZON FLEX · 毎日どの市でも</div>
   <h1>当日の最速ルート</h1>
-  <p class="muted" id="build">画面の版 10。Logiport と、市の付かない江辻だけ外します。市や区の番地は残します。</p>
+  <p class="muted" id="build">画面の版 11。位置が取れない配達先が1件でもあれば、ナビは出さず、ルートは作りません。Logiport と、市の付かない江辻だけ外します。</p>
   <p class="muted"><a href="audit.html">動作の監査</a></p>
-  <p class="muted">出発と終了、渋滞エリア、配達リストの長尺画像。番地から全国の住所を引き、その日の条件で運転時間が短い順を作ります。</p>
+  <p class="muted">出発と終了、渋滞エリア、配達リストの長尺画像。番地から全国の住所を引き、その日の条件で運転時間が短い順を作ります。位置が取れない件が残っているあいだは、ナビを出しません。</p>
 </header>
 <main>
   <section class="card">
@@ -174,9 +174,9 @@
 <div class="bar" id="bar">
   <button type="button" id="primary">画像を選んでルートを作る</button>
 </div>
-  <script src="vendor/leaflet/leaflet.js?v=10"></script>
-  <script src="planner.js?v=10"></script>
-  <script src="reader.js?v=10"></script>
+  <script src="vendor/leaflet/leaflet.js?v=11"></script>
+  <script src="planner.js?v=11"></script>
+  <script src="reader.js?v=11"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -295,7 +295,7 @@ function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
 
 async function locateAll() {
   stops = collectFromForm();
-  if (!stops.length) return;
+  if (!stops.length) return "";
   let networkError = "";
   for (let i = 0; i < stops.length; i++) {
     setStatus("住所を確認しています " + (i + 1) + "/" + stops.length);
@@ -311,28 +311,21 @@ async function locateAll() {
     }
   }
   drawRows();
-  const missed = stops.filter((s) => s.lat == null).length;
-  if (networkError && missed === stops.length) {
-    setStatus("住所検索に接続できませんでした。" + networkError);
-  } else if (missed) {
-    setStatus(stops.length + "件中" + missed + "件は番地が地図にありません。赤い行を直すと、その件もルートに入ります。");
-  } else {
-    setStatus(stops.length + "件の位置を確認しました。");
-  }
+  return networkError;
 }
 
 function areaObjects() {
   return FlexPlanner.parseAreaNames($("areas").value).map((name) => ({ name, radiusM: 800 }));
 }
 
-function renderRoute(ordered) {
+function renderRoute(ordered, urls) {
   $("result").hidden = false;
   const endMin = FlexPlanner.clockToMin($("end").value);
   const late = ordered.filter((s) => s.missesEnd);
   const restricted = ordered.filter((s) => s.inRestriction);
   const last = ordered[ordered.length - 1];
   const done = last ? FlexPlanner.formatMin(last.arriveMin + Number($("service").value || 1.3)) : "";
-  $("summary").textContent = ordered.length + "件。出発 " + $("depart").value +
+  $("summary").textContent = "配達先" + ordered.length + "件がすべてナビに入っています。出発 " + $("depart").value +
     "、終わり " + done + "、指定の終了 " + ($("end").value || "未入力") +
     "。7:00–9:00にかかるのは " + restricted.length + "件。玄関は1件 " + $("service").value + "分です。";
   $("alert").innerHTML = late.length
@@ -347,7 +340,7 @@ function renderRoute(ordered) {
   legs.forEach((leg, index) => {
     const from = ordered.indexOf(leg[0]) + 1;
     const to = ordered.indexOf(leg[leg.length - 1]) + 1;
-    const href = FlexPlanner.mapsUrl(leg, index === 0);
+    const href = urls[index];
     const a = document.createElement("a");
     a.href = href; a.target = "_blank"; a.rel = "noopener";
     a.textContent = (index + 1) + "区間 " + from + "–" + to;
@@ -377,12 +370,14 @@ function renderRoute(ordered) {
       '</b><div class="muted">' + flags + ' · <a href="' + one + '" target="_blank" rel="noopener">この件だけ</a></div></div>';
     list.appendChild(li);
   });
+  let mapOk = true;
   try {
     drawMap(ordered);
   } catch (e) {
-    setStatus("地図は出せませんでしたが、下のボタンでナビは始まります。");
+    mapOk = false;
   }
   $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+  return mapOk;
 }
 
 function drawMap(ordered) {
@@ -410,55 +405,84 @@ function drawMap(ordered) {
   if (latlngs.length) map.fitBounds(latlngs, { padding: [28, 28] });
 }
 
+function showPlanButton() {
+  const bar = $("bar");
+  bar.innerHTML = "";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.id = "primary";
+  button.textContent = stops.length ? "ルートを作る" : "画像を選んでルートを作る";
+  button.onclick = () => {
+    if (!stops.length) fileInput.click();
+    else plan();
+  };
+  bar.appendChild(button);
+}
+
+function refuseRoute(message) {
+  $("result").hidden = true;
+  $("legs").innerHTML = "";
+  $("list").innerHTML = "";
+  showPlanButton();
+  setStatus(message);
+  $("review").hidden = stops.length === 0;
+  if (stops.length) $("review").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 async function plan() {
   saveForm();
   try {
-  let formStops = collectFromForm();
-  let droppedEnds = false;
-  if (!endsRemoved) {
-    const trimmed = FlexPlanner.withoutTerminalStops(formStops);
-    droppedEnds = formStops.length !== trimmed.length;
-    formStops = trimmed;
-    endsRemoved = true;
-  }
-  stops = formStops;
-  drawRows();
-  if (!stops.length) {
-    setStatus(droppedEnds
-      ? "拠点の行だけで、配達の番地が残っていません。画像をもう一度選んでください。"
-      : "停留所が読み取れていません。画像を選ぶか、住所を1行ずつ貼ってください。");
-    $("review").scrollIntoView({ behavior: "smooth", block: "start" });
-    return;
-  }
-  await locateAll();
-  const located = stops.filter((s) => s.lat != null);
-  if (!located.length) {
-    setStatus("停留は " + stops.length + " 件読みましたが、住所の位置が1件も取れませんでした。赤い行の番地を直して、もう一度押してください。");
-    $("review").hidden = false;
-    $("review").scrollIntoView({ behavior: "smooth", block: "start" });
-    return;
-  }
-  const departMin = FlexPlanner.clockToMin($("depart").value);
-  const endMin = FlexPlanner.clockToMin($("end").value);
-  if (departMin == null || endMin == null) {
-    setStatus("出発と終了の時刻を入れてください。");
-    return;
-  }
-  if (endMin <= departMin) {
-    setStatus("終了時刻は出発より後にしてください。");
-    return;
-  }
-  const marked = located.find((s) => s.current);
-  const ordered = FlexPlanner.planDay(located, {
-    departMin, endMin,
-    serviceMin: Number($("service").value || 1.3),
-    areas: areaObjects(),
-    here: here || (marked ? { lat: marked.lat, lon: marked.lon } : null)
-  });
-  renderRoute(ordered);
-  if (droppedEnds) setStatus("拠点の行を外して、" + ordered.length + "件でルートを作りました。");
+    let formStops = collectFromForm();
+    let droppedEnds = false;
+    if (!endsRemoved) {
+      const trimmed = FlexPlanner.withoutTerminalStops(formStops);
+      droppedEnds = formStops.length !== trimmed.length;
+      formStops = trimmed;
+      endsRemoved = true;
+    }
+    stops = formStops;
+    drawRows();
+    if (!stops.length) {
+      refuseRoute(droppedEnds
+        ? "拠点の行だけで、配達の番地が残っていません。画像をもう一度選んでください。"
+        : "配達先が読み取れていません。画像を選ぶか、住所を1行ずつ貼ってください。");
+      return;
+    }
+    const networkError = await locateAll();
+    const gate = FlexPlanner.routeGate(stops);
+    if (!gate.ready) {
+      const head = networkError ? "住所検索に接続できませんでした。" : "";
+      refuseRoute(head + "配達先は" + gate.deliveries.length + "件です。位置が取れたのは" + gate.located + "件です。残りの" + gate.missing.length + "件はナビに入っていません。ルートは作っていません。");
+      return;
+    }
+    const departMin = FlexPlanner.clockToMin($("depart").value);
+    const endMin = FlexPlanner.clockToMin($("end").value);
+    if (departMin == null || endMin == null) {
+      refuseRoute("出発と終了の時刻を入れてください。");
+      return;
+    }
+    if (endMin <= departMin) {
+      refuseRoute("終了時刻は出発より後にしてください。");
+      return;
+    }
+    const marked = gate.deliveries.find((s) => s.current);
+    const ordered = FlexPlanner.planDay(gate.deliveries, {
+      departMin, endMin,
+      serviceMin: Number($("service").value || 1.3),
+      areas: areaObjects(),
+      here: here || (marked ? { lat: marked.lat, lon: marked.lon } : null)
+    });
+    const nav = FlexPlanner.navFromRoute(ordered);
+    if (!nav.ready || nav.covered !== ordered.length || nav.urls.length === 0) {
+      refuseRoute("配達先は" + gate.deliveries.length + "件です。ナビURLに全件は入っていません。ルートは作っていません。");
+      return;
+    }
+    const mapOk = renderRoute(ordered, nav.urls);
+    const note = droppedEnds ? "拠点の行を外しました。" : "";
+    const mapNote = mapOk ? "" : "地図は出せませんでした。ナビのボタンは使えます。";
+    setStatus(note + "配達先" + ordered.length + "件がすべてナビに入っています。" + mapNote);
   } catch (e) {
-    setStatus(e && e.message ? e.message : "ルートを作れませんでした。");
+    refuseRoute(e && e.message ? e.message : "ルートを作れませんでした。");
   }
 }
 
@@ -495,22 +519,7 @@ async function ingestFiles(files) {
 }
 
 function mergeStops(parsed) {
-  parsed.forEach((s) => {
-    const key = FlexPlanner.streetQuery(s.address);
-    const prev = (s.id != null && stops.find((x) => x.id === s.id))
-      || stops.find((x) => FlexPlanner.streetQuery(x.address) === key);
-    if (!prev) stops.push(s);
-    else {
-      if ((s.address || "").length > (prev.address || "").length) prev.address = s.address;
-      if (s.id != null) prev.id = s.id;
-      if (s.current) prev.current = true;
-      if (s.windowEnd && !prev.windowEnd) {
-        prev.windowEnd = s.windowEnd;
-        prev.windowEndMin = s.windowEndMin;
-        prev.windowStart = s.windowStart;
-      }
-    }
-  });
+  stops = FlexPlanner.mergeParsed(stops, parsed);
 }
 
 $("drop").onclick = () => fileInput.click();

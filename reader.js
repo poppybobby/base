@@ -3,6 +3,12 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   root.FlexReader = api;
 })(typeof self !== "undefined" ? self : this, function () {
+  const MIN_IMAGE_WIDTH = 500;
+
+  function narrowImageMessage(width) {
+    return "画像の横幅が" + width + "pxしかありません。番地が潰れて読めません。スマホの写真アプリにある元の長尺ファイル（横1000px前後）を選んでください。";
+  }
+
   function create(options) {
     const opts = options || {};
     const setStatus = opts.setStatus || function () {};
@@ -111,8 +117,8 @@
 
     async function readFile(file) {
       const img = await loadImage(file);
-      if (img.width < 500) {
-        throw new Error("画像の横幅が" + img.width + "pxしかありません。番地が潰れて読めません。スマホの写真アプリにある元の長尺ファイル（横1000px前後）を選んでください。");
+      if (img.width < MIN_IMAGE_WIDTH) {
+        throw new Error(narrowImageMessage(img.width));
       }
       const plain = await readMode(img, "plain");
       if (FlexPlanner.parseFlexText(plain).length) return plain;
@@ -123,5 +129,5 @@
     return { readFile: readFile };
   }
 
-  return { create: create };
+  return { create: create, narrowImageMessage: narrowImageMessage, MIN_IMAGE_WIDTH: MIN_IMAGE_WIDTH };
 });
